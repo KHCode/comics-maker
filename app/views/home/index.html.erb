@@ -1,0 +1,5 @@
+<h1>Kapow</h1>
+
+<p>Signed in as <%= Current.user.name %> (<%= Current.user.email %>)</p>
+
+<%= button_to "Sign out", session_path, method: :delete %>
