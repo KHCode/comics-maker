@@ -9,13 +9,222 @@
  * Consider organizing styles into separate files for maintainability.
  */
 
+/* === Fonts (self-hosted; see app/assets/fonts — all OFL-licensed) === */
+
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 600 900; /* variable font: one file covers this whole weight range */
+  font-display: swap;
+  src: url("nunito-variable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Bangers";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("bangers-regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Comic Neue";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("comicneue-regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Comic Neue";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("comicneue-bold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Comic Neue";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("comicneue-italic.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Comic Neue";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("comicneue-bolditalic.woff2") format("woff2");
+}
+
+/* === Design tokens === */
+
+:root {
+  --color-ink: #1c1a17;
+  --color-accent: #ffd43a;
+  --color-paper: #f6f3ec;
+  --color-desk: #e9e4d8;
+  --color-sfx-red: #e0452d;
+  --color-orange: #f2994a;
+
+  /* Semantic roles, swapped for dark mode below. The comic page canvas
+     itself is never themed — see .page-canvas — matching the doc: "the
+     comic page itself stays white." */
+  --color-surface: var(--color-desk);
+  --color-surface-raised: var(--color-paper);
+  --color-text: var(--color-ink);
+  --color-border: var(--color-ink);
+
+  --border-width: 3px;
+  --radius: 10px;
+  --shadow-offset: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-surface: #17150f;
+    --color-surface-raised: #26231c;
+    --color-text: var(--color-paper);
+    --color-border: var(--color-paper);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-surface: #17150f;
+  --color-surface-raised: #26231c;
+  --color-text: var(--color-paper);
+  --color-border: var(--color-paper);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 1rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: "Nunito", system-ui, sans-serif;
+  font-weight: 600;
+}
+
+h1, h2, h3 {
+  font-weight: 800;
+}
+
+/* === Hand-built component language: chunky borders, hard offset shadows,
+   generous radii, slight rotation on brand elements === */
+
+button,
+input[type="submit"],
+.btn {
+  display: inline-block;
+  font-family: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-offset) var(--shadow-offset) 0 var(--color-border);
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+
+button:active:not(:disabled),
+input[type="submit"]:active:not(:disabled),
+.btn:active {
+  /* Deliberately no transform here: shifting the box on press moves its
+     hit-target out from under the cursor between mousedown and mouseup,
+     so clicks near the (now-vacated) top/left edge fail to register.
+     Collapsing the shadow alone still reads as "pressed" without moving
+     the actual clickable box. */
+  box-shadow: none;
+}
+
+button:disabled,
+input[type="submit"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+/* Solid-fill button variants. Text is always ink/black, never the
+   theme-swapped --color-text — these fills stay bright in dark mode too,
+   so white text would be hard to read (same reasoning as .mode-tab--active). */
+.btn--view {
+  background: var(--color-orange);
+  color: var(--color-ink);
+}
+
+.btn--danger {
+  background: var(--color-sfx-red);
+  color: var(--color-ink);
+}
+
+/* A lighter-touch button for small, per-item actions that shouldn't
+   compete visually with primary actions (e.g. a page's delete button). */
+.btn--subtle {
+  border: none;
+  box-shadow: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-sfx-red);
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+}
+
+.btn--subtle:hover {
+  background: var(--color-surface);
+}
+
+.btn--subtle:active:not(:disabled) {
+  box-shadow: none;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"] {
+  font-family: inherit;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  padding: 0.4rem 0.6rem;
+}
+
+/* === Logo wordmark === */
+
+.logo {
+  font-family: "Bangers", "Comic Neue", cursive;
+  font-size: 1.75rem;
+  letter-spacing: 0.02em;
+  color: var(--color-ink);
+  background: var(--color-accent);
+  border: var(--border-width) solid var(--color-ink);
+  border-radius: var(--radius);
+  padding: 0.1rem 0.6rem;
+  display: inline-block;
+  transform: rotate(-2deg);
+  text-decoration: none;
+}
+
+/* === Flash / errors === */
+
 .flash {
   padding: 0.5rem 0.75rem;
   margin-bottom: 1rem;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
 }
 
 .flash--alert {
-  color: #b00020;
+  color: var(--color-sfx-red);
+  border-color: var(--color-sfx-red);
 }
 
 .flash--notice {
@@ -23,7 +232,7 @@
 }
 
 .field-errors {
-  color: #b00020;
+  color: var(--color-sfx-red);
 }
 
 .inline-form {
@@ -33,9 +242,17 @@
 .signed-in-bar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
   margin-bottom: 1rem;
 }
+
+.signed-in-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* === Projects screen === */
 
 .format-cards {
   display: flex;
@@ -48,7 +265,9 @@
 
 .format-preview {
   width: 80px;
-  border: 2px solid #1c1a17;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: calc(var(--radius) / 2);
+  background: var(--color-paper);
 }
 
 .format-preview--comic { aspect-ratio: 620 / 956; }
@@ -56,26 +275,57 @@
 .format-preview--newspaper_strip { aspect-ratio: 1000 / 330; }
 .format-preview--webtoon { aspect-ratio: 500 / 1500; }
 
-.editor {
+.project-list {
+  list-style: none;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  gap: 0.75rem;
+}
+
+.project-list-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
+}
+
+.project-info {
+  margin-right: auto;
+}
+
+.project-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* === Editor shell === */
+
+.editor {
+  /* Pinned to the true viewport edges, independent of body's own padding —
+     do not add height/padding here; header/footer/canvas each manage their
+     own inset instead, so this keeps filling exactly the viewport. */
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .editor-header {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem 1rem;
-  border-bottom: 2px solid #1c1a17;
-}
-
-.editor-logo {
-  font-weight: bold;
+  padding: 1rem;
+  border-bottom: var(--border-width) solid var(--color-border);
+  background: var(--color-surface-raised);
 }
 
 .editor-project-name {
   margin-right: auto;
+  font-weight: 800;
 }
 
 .editor-canvas {
@@ -103,19 +353,23 @@
 
 .page-label {
   margin-right: auto;
-  font-weight: bold;
+  font-weight: 800;
 }
 
 .page-canvas {
   display: block;
   width: min(100%, 400px);
   height: auto;
-  border: 2px solid #1c1a17;
+  border: var(--border-width) solid var(--color-ink);
+  border-radius: calc(var(--radius) / 2);
+  /* The comic page itself always stays white, regardless of theme. */
   background: #fff;
 }
 
 .editor-footer {
-  border-top: 2px solid #1c1a17;
+  padding-bottom: 1rem;
+  border-top: var(--border-width) solid var(--color-border);
+  background: var(--color-surface-raised);
 }
 
 .mode-tabs {
@@ -125,10 +379,15 @@
 .mode-tab {
   flex: 1;
   padding: 0.75rem;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .mode-tab--active {
-  background: #ddd;
+  background: var(--color-accent);
+  /* Explicit ink, not --color-text: the accent fill stays bright yellow in
+     dark mode too, so the theme-swapped (near-white) text would be unreadable. */
+  color: var(--color-ink);
 }
 
 .contextual-tray {
