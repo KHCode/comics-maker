@@ -1,5 +1,8 @@
 class Page < ApplicationRecord
-  belongs_to :project
+  # touch: true keeps Project#updated_at reflecting real editing activity
+  # (adding/deleting/resizing pages, and later panel/text edits), so the
+  # projects list can sort by "most recently worked on."
+  belongs_to :project, touch: true
 
   attribute :data, default: -> { { "schema_version" => 1, "panels" => [], "texts" => [] } }
 

@@ -36,7 +36,7 @@ class PagesController < ApplicationController
   def grow
     return head :unprocessable_entity unless @project.webtoon?
 
-    @page.increment!(:height_units)
+    @page.update!(height_units: @page.height_units.to_i + 1)
     redirect_to project_path(@project)
   end
 
@@ -47,7 +47,7 @@ class PagesController < ApplicationController
       return redirect_to project_path(@project), alert: "Already at the shortest height."
     end
 
-    @page.decrement!(:height_units)
+    @page.update!(height_units: @page.height_units - 1)
     redirect_to project_path(@project)
   end
 

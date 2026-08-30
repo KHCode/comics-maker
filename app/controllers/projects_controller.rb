@@ -2,7 +2,7 @@ class ProjectsController < ApplicationController
   before_action :set_project, only: %i[ show destroy ]
 
   def index
-    @projects = Current.user.projects.order(created_at: :desc)
+    @projects = Current.user.projects.includes(:pages).order(updated_at: :desc)
   end
 
   def show
