@@ -13,7 +13,7 @@ class AuthenticationTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to root_path
     follow_redirect!
-    assert_select "p", text: /Signed in as Alex/
+    assert_match "Signed in as Alex", response.body
   end
 
   test "signing up with invalid data re-renders the form" do
@@ -31,7 +31,7 @@ class AuthenticationTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to root_path
     follow_redirect!
-    assert_select "p", text: /Signed in as Alex/
+    assert_match "Signed in as Alex", response.body
   end
 
   test "signing in with incorrect credentials redirects back to sign in" do
