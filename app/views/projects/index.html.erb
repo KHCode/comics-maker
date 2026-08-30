@@ -1,0 +1,36 @@
+<div class="signed-in-bar">
+  <span>Signed in as <%= Current.user.name %></span>
+  <%= button_to "Sign out", session_path, method: :delete, form: { class: "inline-form" } %>
+</div>
+
+<%= tag.div flash[:alert], class: "flash flash--alert" if flash[:alert] %>
+<%= tag.div flash[:notice], class: "flash flash--notice" if flash[:notice] %>
+
+<h1>Start a new comic</h1>
+
+<div class="format-cards">
+  <% ProjectsHelper::FORMAT_PREVIEWS.each do |format, preview| %>
+    <%= button_to projects_path, params: { format: format }, class: "format-card" do %>
+      <div class="format-preview format-preview--<%= format %>"></div>
+      <div><%= preview[:label] %></div>
+      <% if preview[:sublabel] %>
+        <small><%= preview[:sublabel] %></small>
+      <% end %>
+    <% end %>
+  <% end %>
+</div>
+
+<h2>My Comics</h2>
+
+<% if @projects.empty? %>
+  <p>No comics yet — pick a format above to start one.</p>
+<% else %>
+  <ul>
+    <% @projects.each do |project| %>
+      <li>
+        <%= project.name %> (<%= project.format.humanize %>)
+        <%= button_to "Delete", project_path(project), method: :delete, form: { class: "inline-form" } %>
+      </li>
+    <% end %>
+  </ul>
+<% end %>

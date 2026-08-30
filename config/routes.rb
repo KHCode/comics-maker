@@ -11,7 +11,8 @@ Rails.application.routes.draw do
 
   resource :session, only: %i[ new create destroy ]
   resources :users, only: %i[ new create ]
+  resources :projects, only: %i[ index create destroy ]
 
   # Defines the root path route ("/")
-  root "home#index"
+  root "projects#index"
 end
