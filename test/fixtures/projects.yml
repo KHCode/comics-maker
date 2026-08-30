@@ -1,0 +1,19 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  user: one
+  folder: one
+  name: Field Trip Comic
+  format: comic
+
+two:
+  user: two
+  folder: two
+  name: Robot Manga
+  format: manga_b5
+
+unfiled:
+  user: one
+  folder:
+  name: Comic #1
+  format: comic
