@@ -1,0 +1,38 @@
+/* Design tokens. */
+
+:root {
+  --color-ink: #1c1a17;
+  --color-accent: #ffd43a;
+  --color-paper: #f6f3ec;
+  --color-desk: #e9e4d8;
+  --color-sfx-red: #e0452d;
+  --color-orange: #f2994a;
+
+  /* Semantic roles, swapped for dark mode below. The comic page canvas
+     itself is never themed — see .page-canvas — matching the doc: "the
+     comic page itself stays white." */
+  --color-surface: var(--color-desk);
+  --color-surface-raised: var(--color-paper);
+  --color-text: var(--color-ink);
+  --color-border: var(--color-ink);
+
+  --border-width: 3px;
+  --radius: 10px;
+  --shadow-offset: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-surface: #17150f;
+    --color-surface-raised: #26231c;
+    --color-text: var(--color-paper);
+    --color-border: var(--color-paper);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-surface: #17150f;
+  --color-surface-raised: #26231c;
+  --color-text: var(--color-paper);
+  --color-border: var(--color-paper);
+}

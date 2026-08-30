@@ -1,0 +1,80 @@
+/* === Hand-built component language: chunky borders, hard offset shadows,
+   generous radii === */
+
+button,
+input[type="submit"],
+.btn {
+  display: inline-block;
+  font-family: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-offset) var(--shadow-offset) 0 var(--color-border);
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+
+button:active:not(:disabled),
+input[type="submit"]:active:not(:disabled),
+.btn:active {
+  /* Deliberately no transform here: shifting the box on press moves its
+     hit-target out from under the cursor between mousedown and mouseup,
+     so clicks near the (now-vacated) top/left edge fail to register.
+     Collapsing the shadow alone still reads as "pressed" without moving
+     the actual clickable box. */
+  box-shadow: none;
+}
+
+button:disabled,
+input[type="submit"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+/* Solid-fill button variants. Text is always ink/black, never the
+   theme-swapped --color-text — these fills stay bright in dark mode too,
+   so white text would be hard to read (same reasoning as .mode-tab--active). */
+.btn--view {
+  background: var(--color-orange);
+  color: var(--color-ink);
+}
+
+.btn--danger {
+  background: var(--color-sfx-red);
+  color: var(--color-ink);
+}
+
+/* A lighter-touch button for small, per-item actions that shouldn't
+   compete visually with primary actions (e.g. a page's delete button). */
+.btn--subtle {
+  border: none;
+  box-shadow: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-sfx-red);
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+}
+
+.btn--subtle:hover {
+  background: var(--color-surface);
+}
+
+.btn--subtle:active:not(:disabled) {
+  box-shadow: none;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"] {
+  font-family: inherit;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  padding: 0.4rem 0.6rem;
+}

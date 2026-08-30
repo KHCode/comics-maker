@@ -1,0 +1,20 @@
+.flash {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
+}
+
+.flash--alert {
+  color: var(--color-sfx-red);
+  border-color: var(--color-sfx-red);
+}
+
+.flash--notice {
+  color: #007a3d;
+}
+
+.field-errors {
+  color: var(--color-sfx-red);
+}

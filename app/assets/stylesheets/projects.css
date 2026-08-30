@@ -1,0 +1,62 @@
+/* === Projects screen === */
+
+.signed-in-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.signed-in-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.format-cards {
+  display: flex;
+  gap: 1rem;
+}
+
+.format-card {
+  text-align: center;
+}
+
+.format-preview {
+  width: 80px;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: calc(var(--radius) / 2);
+  background: var(--color-paper);
+}
+
+.format-preview--comic { aspect-ratio: 620 / 956; }
+.format-preview--manga_b5 { aspect-ratio: 560 / 794; }
+.format-preview--newspaper_strip { aspect-ratio: 1000 / 330; }
+.format-preview--webtoon { aspect-ratio: 500 / 1500; }
+
+.project-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.project-list-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
+}
+
+.project-info {
+  margin-right: auto;
+}
+
+.project-actions {
+  display: flex;
+  gap: 0.75rem;
+}
