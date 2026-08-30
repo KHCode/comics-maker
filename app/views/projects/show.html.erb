@@ -1,6 +1,6 @@
 <div class="editor" data-controller="editor">
   <header class="editor-header">
-    <%= link_to "Kapow", projects_path, class: "editor-logo" %>
+    <%= render "shared/logo" %>
 
     <span class="editor-project-name"><%= @project.name %></span>
     <span class="editor-format"><%= @project.format.humanize %></span>
@@ -13,7 +13,7 @@
     <% end %>
     <button type="button" disabled>Undo</button>
     <button type="button" disabled>Redo</button>
-    <button type="button" disabled>Theme</button>
+    <button type="button" data-action="click->theme#toggle">Theme</button>
     <button type="button" disabled>Save</button>
     <button type="button" disabled>Save As&hellip;</button>
     <button type="button" disabled>Export</button>
@@ -22,13 +22,16 @@
   </header>
 
   <main class="editor-canvas">
+    <%= tag.div flash[:alert], class: "flash flash--alert" if flash[:alert] %>
+    <%= tag.div flash[:notice], class: "flash flash--notice" if flash[:notice] %>
+
     <div class="pages">
       <% @pages.each do |page| %>
         <div class="page">
           <div class="page-toolbar">
             <span class="page-label"><%= page.name %></span>
             <% if @project.paginated? && @pages.size > 1 %>
-              <%= button_to "Delete page", project_page_path(@project, page), method: :delete, form: { class: "inline-form" } %>
+              <%= button_to "Delete page", project_page_path(@project, page), method: :delete, class: "btn--subtle", form: { class: "inline-form" } %>
             <% end %>
           </div>
           <svg class="page-canvas" viewBox="0 0 <%= @project.page_width %> <%= page.height %>" role="img" aria-label="<%= page.name %>"></svg>
