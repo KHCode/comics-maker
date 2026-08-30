@@ -28,7 +28,7 @@ class ProjectsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "create builds a project and a blank first page for each format" do
+  test "create builds a project and a blank first page for each format, then redirects to the editor" do
     %w[comic manga_b5 newspaper_strip webtoon].each do |format|
       assert_difference [ "Project.count", "Page.count" ], 1 do
         post projects_path, params: { format: format }
@@ -38,9 +38,8 @@ class ProjectsControllerTest < ActionDispatch::IntegrationTest
       assert_equal format, project.format
       assert_equal 1, project.pages.count
       assert_equal 1, project.pages.first.position
+      assert_redirected_to project_path(project)
     end
-
-    assert_redirected_to projects_path
   end
 
   test "create sets height_units only for webtoon" do
@@ -56,6 +55,26 @@ class ProjectsControllerTest < ActionDispatch::IntegrationTest
       post projects_path, params: { format: "supersized" }
     end
     assert_redirected_to projects_path
+  end
+
+  test "show renders the editor shell for the current user's project" do
+    project = projects(:one)
+
+    get project_path(project)
+
+    assert_response :success
+    assert_select ".editor[data-controller=?]", "editor"
+    assert_select ".mode-tab[data-mode=?]", "layout"
+    assert_select ".mode-tab[data-mode=?]", "draw"
+    assert_select ".mode-tab[data-mode=?]", "letter"
+    assert_select ".contextual-tray[data-mode=?]", "layout", count: 1
+    assert_select ".contextual-tray[data-mode=?]", "draw", count: 1
+    assert_select ".contextual-tray[data-mode=?]", "letter", count: 1
+  end
+
+  test "show cannot be accessed for another user's project" do
+    get project_path(projects(:two))
+    assert_response :not_found
   end
 
   test "destroy removes the current user's project" do

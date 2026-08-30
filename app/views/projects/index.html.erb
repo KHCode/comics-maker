@@ -28,7 +28,7 @@
   <ul>
     <% @projects.each do |project| %>
       <li>
-        <%= project.name %> (<%= project.format.humanize %>)
+        <%= link_to project.name, project_path(project) %> (<%= project.format.humanize %>)
         <%= button_to "Delete", project_path(project), method: :delete, form: { class: "inline-form" } %>
       </li>
     <% end %>
