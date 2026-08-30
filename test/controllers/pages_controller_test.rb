@@ -122,4 +122,29 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, page.reload.height_units
     assert_redirected_to project_path(project)
   end
+
+  test "create, destroy, grow, and shrink all touch the project's updated_at" do
+    project = @user.projects.create!(name: "Paginated", format: :comic, updated_at: 1.day.ago)
+    project.pages.create!(position: 1, name: "Page 1")
+
+    assert_changes -> { project.reload.updated_at } do
+      post project_pages_path(project)
+    end
+
+    page = project.pages.order(:position).last
+    assert_changes -> { project.reload.updated_at } do
+      delete project_page_path(project, page)
+    end
+
+    webtoon = @user.projects.create!(name: "Scroll", format: :webtoon, updated_at: 1.day.ago)
+    webtoon_page = webtoon.pages.create!(position: 1, name: "Page 1", height_units: 1)
+
+    assert_changes -> { webtoon.reload.updated_at } do
+      patch grow_project_page_path(webtoon, webtoon_page)
+    end
+
+    assert_changes -> { webtoon.reload.updated_at } do
+      patch shrink_project_page_path(webtoon, webtoon_page)
+    end
+  end
 end

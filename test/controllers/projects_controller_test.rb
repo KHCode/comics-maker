@@ -19,6 +19,27 @@ class ProjectsControllerTest < ActionDispatch::IntegrationTest
     assert_select "li", text: /#{projects(:two).name}/, count: 0
   end
 
+  test "index orders projects by most recently updated first" do
+    older = @user.projects.create!(name: "Older", format: :comic, updated_at: 2.days.ago)
+    newer = @user.projects.create!(name: "Newer", format: :comic, updated_at: 1.hour.ago)
+
+    get projects_path
+
+    assert_response :success
+    body = response.body
+    assert body.index(newer.name) < body.index(older.name)
+  end
+
+  test "index shows each project's last-updated time and page count" do
+    project = @user.projects.create!(name: "With Pages", format: :comic)
+    project.pages.create!(position: 1, name: "Page 1")
+    project.pages.create!(position: 2, name: "Page 2")
+
+    get projects_path
+
+    assert_select "li", text: /2 pages/
+  end
+
   test "each format card posts format as a body param, not a URL/route extension" do
     get projects_path
     assert_response :success
