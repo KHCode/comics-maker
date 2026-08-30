@@ -1,0 +1,21 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  project: one
+  position: 1
+  name: Page 1
+  height_units:
+  data:
+    schema_version: 1
+    panels: []
+    texts: []
+
+two:
+  project: two
+  position: 1
+  name: Page 1
+  height_units:
+  data:
+    schema_version: 1
+    panels: []
+    texts: []
