@@ -12,7 +12,7 @@ Rails.application.routes.draw do
   resource :session, only: %i[ new create destroy ]
   resources :users, only: %i[ new create ]
   resources :projects, only: %i[ index show create destroy ] do
-    resources :pages, only: %i[ create destroy ] do
+    resources :pages, only: %i[ create update destroy ] do
       member do
         patch :grow
         patch :shrink

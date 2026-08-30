@@ -27,7 +27,11 @@
 
     <div class="pages">
       <% @pages.each do |page| %>
-        <div class="page">
+        <div class="page"
+             data-controller="document-store"
+             data-document-store-project-id-value="<%= @project.id %>"
+             data-document-store-page-id-value="<%= page.id %>"
+             data-document-store-initial-data-value="<%= page.data.to_json %>">
           <div class="page-toolbar">
             <span class="page-label"><%= page.name %></span>
             <% if @project.paginated? && @pages.size > 1 %>
