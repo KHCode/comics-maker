@@ -55,3 +55,53 @@
 .format-preview--manga_b5 { aspect-ratio: 560 / 794; }
 .format-preview--newspaper_strip { aspect-ratio: 1000 / 330; }
 .format-preview--webtoon { aspect-ratio: 500 / 1500; }
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.editor-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 2px solid #1c1a17;
+}
+
+.editor-logo {
+  font-weight: bold;
+}
+
+.editor-project-name {
+  margin-right: auto;
+}
+
+.editor-canvas {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.editor-footer {
+  border-top: 2px solid #1c1a17;
+}
+
+.mode-tabs {
+  display: flex;
+}
+
+.mode-tab {
+  flex: 1;
+  padding: 0.75rem;
+}
+
+.mode-tab--active {
+  background: #ddd;
+}
+
+.contextual-tray {
+  padding: 0.75rem 1rem;
+}

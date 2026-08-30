@@ -1,0 +1,34 @@
+<div class="editor" data-controller="editor">
+  <header class="editor-header">
+    <%= link_to "Kapow", projects_path, class: "editor-logo" %>
+
+    <span class="editor-project-name"><%= @project.name %></span>
+    <span class="editor-format"><%= @project.format.humanize %></span>
+
+    <button type="button" disabled>+Page</button>
+    <button type="button" disabled>Undo</button>
+    <button type="button" disabled>Redo</button>
+    <button type="button" disabled>Theme</button>
+    <button type="button" disabled>Save</button>
+    <button type="button" disabled>Save As&hellip;</button>
+    <button type="button" disabled>Export</button>
+
+    <%= button_to "Sign out", session_path, method: :delete, form: { class: "inline-form" } %>
+  </header>
+
+  <main class="editor-canvas">
+    <p><%= pluralize(@pages.count, "page") %> in this comic.</p>
+  </main>
+
+  <footer class="editor-footer">
+    <nav class="mode-tabs">
+      <button type="button" class="mode-tab mode-tab--active" data-editor-target="tab" data-mode="layout" data-action="click->editor#switchMode">Layout</button>
+      <button type="button" class="mode-tab" data-editor-target="tab" data-mode="draw" data-action="click->editor#switchMode">Draw</button>
+      <button type="button" class="mode-tab" data-editor-target="tab" data-mode="letter" data-action="click->editor#switchMode">Letter</button>
+    </nav>
+
+    <div class="contextual-tray" data-editor-target="tray" data-mode="layout">Layout tools will go here.</div>
+    <div class="contextual-tray" data-editor-target="tray" data-mode="draw" hidden>Draw tools will go here.</div>
+    <div class="contextual-tray" data-editor-target="tray" data-mode="letter" hidden>Letter tools will go here.</div>
+  </footer>
+</div>

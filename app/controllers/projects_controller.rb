@@ -1,8 +1,12 @@
 class ProjectsController < ApplicationController
-  before_action :set_project, only: :destroy
+  before_action :set_project, only: %i[ show destroy ]
 
   def index
     @projects = Current.user.projects.order(created_at: :desc)
+  end
+
+  def show
+    @pages = @project.pages
   end
 
   def create
@@ -21,7 +25,7 @@ class ProjectsController < ApplicationController
     )
 
     if project.save
-      redirect_to projects_path, notice: "#{project.name} created."
+      redirect_to project_path(project), notice: "#{project.name} created."
     else
       redirect_to projects_path, alert: project.errors.full_messages.to_sentence
     end
