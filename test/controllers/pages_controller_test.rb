@@ -6,6 +6,63 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as @user
   end
 
+  test "update replaces a page's panels and texts" do
+    project = @user.projects.create!(name: "Paginated", format: :comic)
+    page = project.pages.create!(position: 1, name: "Page 1")
+
+    panels = [ { "id" => "p1", "pts" => [ [ 0, 0 ], [ 100, 0 ], [ 100, 100 ], [ 0, 100 ] ], "strokes" => [], "photo" => nil } ]
+    texts = [ { "id" => "t1", "kind" => "speech", "x" => 10, "y" => 10, "w" => 50, "h" => 20, "fs" => 16, "rot" => 0, "text" => "Hi!" } ]
+
+    patch project_page_path(project, page), params: { page: { panels: panels, texts: texts } }, as: :json
+
+    assert_response :no_content
+    page.reload
+    assert_equal panels, page.data["panels"]
+    assert_equal texts, page.data["texts"]
+  end
+
+  test "update preserves schema_version and accepts an empty document" do
+    project = @user.projects.create!(name: "Paginated", format: :comic)
+    page = project.pages.create!(position: 1, name: "Page 1")
+
+    patch project_page_path(project, page), params: { page: { panels: [], texts: [] } }, as: :json
+
+    assert_response :no_content
+    page.reload
+    assert_equal 1, page.data["schema_version"]
+    assert_equal [], page.data["panels"]
+    assert_equal [], page.data["texts"]
+  end
+
+  test "update does not touch position or name" do
+    project = @user.projects.create!(name: "Paginated", format: :comic)
+    page = project.pages.create!(position: 1, name: "Page 1")
+
+    patch project_page_path(project, page), params: { page: { panels: [], texts: [] } }, as: :json
+
+    page.reload
+    assert_equal 1, page.position
+    assert_equal "Page 1", page.name
+  end
+
+  test "update rejects a request with no page param" do
+    project = @user.projects.create!(name: "Paginated", format: :comic)
+    page = project.pages.create!(position: 1, name: "Page 1")
+
+    patch project_page_path(project, page), params: {}, as: :json
+
+    assert_response :bad_request
+  end
+
+  test "cannot update another user's page" do
+    other_project = projects(:two)
+    other_page = pages(:two)
+
+    patch project_page_path(other_project, other_page), params: { page: { panels: [], texts: [] } }, as: :json
+
+    assert_response :not_found
+  end
+
   test "create appends a page for a paginated project" do
     project = @user.projects.create!(name: "Paginated", format: :comic)
     project.pages.create!(position: 1, name: "Page 1")
