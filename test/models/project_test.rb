@@ -45,4 +45,26 @@ class ProjectTest < ActiveSupport::TestCase
       project.destroy
     end
   end
+
+  test "page dimensions match the doc's format table" do
+    cases = {
+      comic: [ 620, 956 ],
+      manga_b5: [ 560, 794 ],
+      newspaper_strip: [ 1000, 330 ],
+      webtoon: [ 500, 1500 ]
+    }
+
+    cases.each do |format, (width, height)|
+      project = Project.new(valid_attributes.merge(format: format))
+      assert_equal width, project.page_width
+      assert_equal height, project.page_unit_height
+    end
+  end
+
+  test "paginated? is true for every format except webtoon" do
+    assert Project.new(valid_attributes.merge(format: :comic)).paginated?
+    assert Project.new(valid_attributes.merge(format: :manga_b5)).paginated?
+    assert Project.new(valid_attributes.merge(format: :newspaper_strip)).paginated?
+    assert_not Project.new(valid_attributes.merge(format: :webtoon)).paginated?
+  end
 end

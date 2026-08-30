@@ -72,6 +72,52 @@ class ProjectsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".contextual-tray[data-mode=?]", "letter", count: 1
   end
 
+  test "show renders one page canvas per page, sized to the project's format" do
+    project = @user.projects.create!(name: "Paginated", format: :comic)
+    project.pages.create!(position: 1, name: "Page 1")
+    project.pages.create!(position: 2, name: "Page 2")
+
+    get project_path(project)
+
+    assert_response :success
+    assert_select "svg.page-canvas[viewBox=?]", "0 0 620 956", count: 2
+    assert_select ".page-label", text: "Page 1"
+    assert_select ".page-label", text: "Page 2"
+    assert_select "form[action=?] button", project_pages_path(project), text: "+Page"
+    assert_select "form[action=?]", project_page_path(project, project.pages.first)
+  end
+
+  test "show renders a growable webtoon page with no per-page delete button" do
+    project = @user.projects.create!(name: "Scroll", format: :webtoon)
+    project.pages.create!(position: 1, name: "Page 1", height_units: 2)
+
+    get project_path(project)
+
+    assert_response :success
+    assert_select "svg.page-canvas[viewBox=?]", "0 0 500 3000"
+    assert_select "form[action=?]", project_page_path(project, project.pages.first), count: 0
+    assert_select "form[action=?]", grow_project_page_path(project, project.pages.first)
+    assert_select "form[action=?] button:not([disabled])", shrink_project_page_path(project, project.pages.first)
+  end
+
+  test "show disables the Shorter button when the webtoon page is already at its shortest height" do
+    project = @user.projects.create!(name: "Scroll", format: :webtoon)
+    project.pages.create!(position: 1, name: "Page 1", height_units: 1)
+
+    get project_path(project)
+
+    assert_select "form[action=?] button[disabled]", shrink_project_page_path(project, project.pages.first)
+  end
+
+  test "show hides the per-page delete button when only one page remains" do
+    project = @user.projects.create!(name: "Paginated", format: :comic)
+    only_page = project.pages.create!(position: 1, name: "Page 1")
+
+    get project_path(project)
+
+    assert_select "form[action=?]", project_page_path(project, only_page), count: 0
+  end
+
   test "show cannot be accessed for another user's project" do
     get project_path(projects(:two))
     assert_response :not_found
