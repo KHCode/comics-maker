@@ -59,7 +59,7 @@
 .editor {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
 }
 
 .editor-header {
@@ -80,9 +80,38 @@
 
 .editor-canvas {
   flex: 1;
+  min-height: 0; /* let this child shrink and scroll internally, instead of growing past .editor's fixed height */
+  overflow-y: auto;
+}
+
+.pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Approximates the doc's 44-page-unit gutter between pages; not an exact
+     unit-to-pixel conversion since page width scales with viewport. */
+  gap: 2rem;
+  padding: 2rem 0;
+}
+
+.page-toolbar {
   display: flex;
   align-items: center;
-  justify-content: center;
+  width: min(100%, 400px);
+  margin-bottom: 0.25rem;
+}
+
+.page-label {
+  margin-right: auto;
+  font-weight: bold;
+}
+
+.page-canvas {
+  display: block;
+  width: min(100%, 400px);
+  height: auto;
+  border: 2px solid #1c1a17;
+  background: #fff;
 }
 
 .editor-footer {

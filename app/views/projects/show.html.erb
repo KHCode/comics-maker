@@ -5,7 +5,12 @@
     <span class="editor-project-name"><%= @project.name %></span>
     <span class="editor-format"><%= @project.format.humanize %></span>
 
-    <button type="button" disabled>+Page</button>
+    <% if @project.paginated? %>
+      <%= button_to "+Page", project_pages_path(@project), form: { class: "inline-form" } %>
+    <% else %>
+      <%= button_to "↓ Longer", grow_project_page_path(@project, @pages.first), method: :patch, form: { class: "inline-form" } %>
+      <%= button_to "↑ Shorter", shrink_project_page_path(@project, @pages.first), method: :patch, form: { class: "inline-form" }, disabled: @pages.first.height_units.to_i <= 1 %>
+    <% end %>
     <button type="button" disabled>Undo</button>
     <button type="button" disabled>Redo</button>
     <button type="button" disabled>Theme</button>
@@ -17,7 +22,19 @@
   </header>
 
   <main class="editor-canvas">
-    <p><%= pluralize(@pages.count, "page") %> in this comic.</p>
+    <div class="pages">
+      <% @pages.each do |page| %>
+        <div class="page">
+          <div class="page-toolbar">
+            <span class="page-label"><%= page.name %></span>
+            <% if @project.paginated? && @pages.size > 1 %>
+              <%= button_to "Delete page", project_page_path(@project, page), method: :delete, form: { class: "inline-form" } %>
+            <% end %>
+          </div>
+          <svg class="page-canvas" viewBox="0 0 <%= @project.page_width %> <%= page.height %>" role="img" aria-label="<%= page.name %>"></svg>
+        </div>
+      <% end %>
+    </div>
   </main>
 
   <footer class="editor-footer">
