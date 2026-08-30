@@ -8,3 +8,50 @@
  *
  * Consider organizing styles into separate files for maintainability.
  */
+
+.flash {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.flash--alert {
+  color: #b00020;
+}
+
+.flash--notice {
+  color: #007a3d;
+}
+
+.field-errors {
+  color: #b00020;
+}
+
+.inline-form {
+  display: inline;
+}
+
+.signed-in-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.format-cards {
+  display: flex;
+  gap: 1rem;
+}
+
+.format-card {
+  text-align: center;
+}
+
+.format-preview {
+  width: 80px;
+  border: 2px solid #1c1a17;
+}
+
+.format-preview--comic { aspect-ratio: 620 / 956; }
+.format-preview--manga_b5 { aspect-ratio: 560 / 794; }
+.format-preview--newspaper_strip { aspect-ratio: 1000 / 330; }
+.format-preview--webtoon { aspect-ratio: 500 / 1500; }
