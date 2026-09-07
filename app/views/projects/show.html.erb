@@ -1,4 +1,4 @@
-<div class="editor" data-controller="editor">
+<div class="editor" data-controller="editor" data-editor-format-value="<%= @project.format %>">
   <header class="editor-header">
     <%= render "shared/logo" %>
 
@@ -24,10 +24,17 @@
     <%= tag.div flash[:alert], class: "flash flash--alert" if flash[:alert] %>
     <%= tag.div flash[:notice], class: "flash flash--notice" if flash[:notice] %>
 
+    <% if @pages.all? { |page| page.data["panels"].blank? } %>
+      <p class="empty-state-hint" data-editor-target="emptyHint">
+        This comic is empty — add a panel or apply a preset from the Layout tools below.
+      </p>
+    <% end %>
+
     <div class="pages">
       <% @pages.each do |page| %>
         <div class="page"
              data-controller="document-store panel"
+             data-action="document-store:change->panel#refresh"
              data-document-store-project-id-value="<%= @project.id %>"
              data-document-store-page-id-value="<%= page.id %>"
              data-document-store-initial-data-value="<%= page.data.to_json %>">
@@ -50,7 +57,21 @@
       <button type="button" class="mode-tab" data-editor-target="tab" data-mode="letter" data-action="click->editor#switchMode">Letter</button>
     </nav>
 
-    <div class="contextual-tray" data-editor-target="tray" data-mode="layout">Layout tools will go here.</div>
+    <div class="contextual-tray" data-editor-target="tray" data-mode="layout">
+      <div class="tray-section">
+        <span class="tray-label">Add panel</span>
+        <button type="button" data-action="click->editor#addPanel" data-editor-shape-param="box">Box</button>
+        <button type="button" data-action="click->editor#addPanel" data-editor-shape-param="slant">Slant</button>
+        <button type="button" data-action="click->editor#addPanel" data-editor-shape-param="round">Round</button>
+        <button type="button" data-action="click->editor#addPanel" data-editor-shape-param="burst">Burst</button>
+      </div>
+      <div class="tray-section">
+        <span class="tray-label">Presets</span>
+        <% ProjectsHelper::LAYOUT_PRESETS.fetch(@project.format).each do |preset_name| %>
+          <button type="button" data-action="click->editor#applyPreset" data-editor-preset-param="<%= preset_name %>"><%= preset_name %></button>
+        <% end %>
+      </div>
+    </div>
     <div class="contextual-tray" data-editor-target="tray" data-mode="draw" hidden>Draw tools will go here.</div>
     <div class="contextual-tray" data-editor-target="tray" data-mode="letter" hidden>Letter tools will go here.</div>
   </footer>

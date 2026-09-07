@@ -10,7 +10,7 @@ const DEFAULT_DEBOUNCE_MS = 800
 // can be unit tested directly (see test/javascript) and reused regardless
 // of how a page's data ends up wired to the rest of the app.
 export class DocumentStore {
-  constructor(initialState = {}, { persist, debounceMs = DEFAULT_DEBOUNCE_MS } = {}) {
+  constructor(initialState = {}, { persist, debounceMs = DEFAULT_DEBOUNCE_MS, onChange } = {}) {
     if (typeof persist !== "function") {
       throw new Error("DocumentStore requires a persist(state) function")
     }
@@ -21,6 +21,7 @@ export class DocumentStore {
     }
     this.persist = persist
     this.debounceMs = debounceMs
+    this.onChange = onChange
     this._timer = null
     this._pendingSave = null
   }
@@ -31,8 +32,11 @@ export class DocumentStore {
 
   // Applies `mutator(state)` and schedules a debounced save. `mutator` may
   // mutate the given state object in place (e.g. `state.panels.push(...)`).
+  // Notifies `onChange` synchronously so renderers (panel/draw/text
+  // controllers) can update immediately, independent of the save debounce.
   mutate(mutator) {
     mutator(this.state)
+    this.onChange?.(this.state)
     this._scheduleSave()
     return this.state
   }
