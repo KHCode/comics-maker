@@ -34,6 +34,21 @@ test("mutate applies the mutator to state", () => {
   assert.deepEqual(store.getState().panels, [ { id: "p1" } ])
 })
 
+test("mutate notifies onChange synchronously, independent of the save debounce", () => {
+  const changes = []
+  const store = new DocumentStore({}, { persist: () => {}, onChange: (state) => changes.push(state.panels.length), debounceMs: 1000 })
+
+  store.mutate((state) => state.panels.push({ id: "p1" }))
+  store.mutate((state) => state.panels.push({ id: "p2" }))
+
+  assert.deepEqual(changes, [ 1, 2 ])
+})
+
+test("onChange is optional", () => {
+  const store = new DocumentStore({}, { persist: () => {} })
+  assert.doesNotThrow(() => store.mutate((state) => state.panels.push({ id: "p1" })))
+})
+
 test("mutate schedules a debounced save rather than persisting immediately", () => {
   let calls = 0
   const store = new DocumentStore({}, { persist: () => calls++, debounceMs: 50 })
