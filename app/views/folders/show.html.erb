@@ -1,0 +1,15 @@
+<%= render "shared/logo" %>
+
+<h1><%= @folder.name %></h1>
+
+<% if @projects.empty? %>
+  <p>Nothing in this folder yet.</p>
+<% else %>
+  <ul class="project-list">
+    <%= render partial: "projects/project", collection: @projects, as: :project %>
+  </ul>
+<% end %>
+
+<%= link_to "Back to Folders", folders_path %>
+&middot;
+<%= link_to "Back to My Comics", projects_path %>
