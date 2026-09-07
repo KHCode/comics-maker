@@ -27,7 +27,7 @@
     <div class="pages">
       <% @pages.each do |page| %>
         <div class="page"
-             data-controller="document-store"
+             data-controller="document-store panel"
              data-document-store-project-id-value="<%= @project.id %>"
              data-document-store-page-id-value="<%= page.id %>"
              data-document-store-initial-data-value="<%= page.data.to_json %>">
@@ -37,7 +37,7 @@
               <%= button_to "Delete page", project_page_path(@project, page), method: :delete, class: "btn--subtle", form: { class: "inline-form" } %>
             <% end %>
           </div>
-          <svg class="page-canvas" viewBox="0 0 <%= @project.page_width %> <%= page.height %>" role="img" aria-label="<%= page.name %>"></svg>
+          <svg class="page-canvas" data-panel-target="canvas" viewBox="0 0 <%= @project.page_width %> <%= page.height %>" role="img" aria-label="<%= page.name %>"></svg>
         </div>
       <% end %>
     </div>

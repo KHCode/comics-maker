@@ -62,6 +62,16 @@
   background: #fff;
 }
 
+.panel-outline {
+  /* Always ink-black regardless of theme — panels sit on the page canvas,
+     which itself always stays white (see .page-canvas above). Stroke width
+     is in page units (like the viewBox), not screen pixels, so it scales
+     with the artwork the same way a printed comic's line weight would. */
+  fill: none;
+  stroke: var(--color-ink);
+  stroke-width: 3;
+}
+
 .editor-footer {
   padding-bottom: 1rem;
   border-top: var(--border-width) solid var(--color-border);
