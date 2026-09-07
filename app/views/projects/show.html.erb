@@ -14,8 +14,7 @@
     <button type="button" disabled>Undo</button>
     <button type="button" disabled>Redo</button>
     <button type="button" data-action="click->theme#toggle">Theme</button>
-    <button type="button" disabled>Save</button>
-    <button type="button" disabled>Save As&hellip;</button>
+    <%= render "projects/save_dialog" %>
     <button type="button" disabled>Export</button>
 
     <%= button_to "Sign out", session_path, method: :delete, form: { class: "inline-form" } %>

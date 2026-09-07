@@ -12,11 +12,27 @@ class ProjectsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to new_session_path
   end
 
-  test "index lists only the current user's projects" do
+  test "index lists only the current user's unfiled projects" do
     get projects_path
     assert_response :success
-    assert_select "li", text: /#{projects(:one).name}/
+    assert_select "li", text: /#{projects(:unfiled).name}/
+    # filed into a folder — belongs on that folder's page, not here
+    assert_select "li", text: /#{projects(:one).name}/, count: 0
+    # a different user's project entirely
     assert_select "li", text: /#{projects(:two).name}/, count: 0
+  end
+
+  test "index does not list a project after it's moved into a folder" do
+    project = @user.projects.create!(name: "Moving", format: :comic)
+    folder = @user.folders.create!(name: "Sketchbook")
+
+    get projects_path
+    assert_select "li", text: /Moving/
+
+    project.update!(folder: folder)
+
+    get projects_path
+    assert_select "li", text: /Moving/, count: 0
   end
 
   test "index orders projects by most recently updated first" do
@@ -158,6 +174,154 @@ class ProjectsControllerTest < ActionDispatch::IntegrationTest
 
     assert_no_difference "Project.count" do
       delete project_path(other_project)
+    end
+    assert_response :not_found
+  end
+
+  test "show embeds the save dialog for the current user's project" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+
+    get project_path(project)
+
+    assert_response :success
+    assert_select "dialog input[name=?][value=?]", "project[name]", "Draft"
+    assert_select "dialog button[name=save_mode][value=save]"
+    assert_select "dialog button[name=save_mode][value=save_as]"
+  end
+
+  test "show reopens the save dialog when open_save is present" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+
+    get project_path(project, open_save: true)
+
+    assert_select "dialog[data-modal-open-value=?]", "true"
+  end
+
+  test "show does not reopen the save dialog on a normal visit" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+
+    get project_path(project)
+
+    assert_select "dialog[data-modal-open-value=?]", "false"
+  end
+
+  test "update with save_mode=save renames the project" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+
+    patch project_path(project), params: { save_mode: "save", project: { name: "Field Trip Comic" } }
+
+    assert_redirected_to project_path(project)
+    assert_equal "Field Trip Comic", project.reload.name
+  end
+
+  test "a plain save (no save_mode) behaves like save_mode=save" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+
+    patch project_path(project), params: { project: { name: "Field Trip Comic" } }
+
+    assert_redirected_to project_path(project)
+    assert_equal "Field Trip Comic", project.reload.name
+  end
+
+  test "update moves the project into a folder owned by the current user" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+    folder = @user.folders.create!(name: "Sketchbook")
+
+    patch project_path(project), params: { project: { name: "Draft", folder_id: folder.id } }
+
+    assert_equal folder, project.reload.folder
+  end
+
+  test "update moves the project back to My Comics with a blank folder selection" do
+    folder = @user.folders.create!(name: "Sketchbook")
+    project = @user.projects.create!(name: "Draft", format: :comic, folder: folder)
+
+    patch project_path(project), params: { project: { name: "Draft", folder_id: "" } }
+
+    assert_nil project.reload.folder_id
+  end
+
+  test "update rejects moving into another user's folder" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+
+    patch project_path(project), params: { project: { name: "Draft", folder_id: folders(:two).id } }
+
+    assert_response :unprocessable_entity
+    assert_nil project.reload.folder_id
+  end
+
+  test "update re-renders the editor with the dialog reopened on a blank name" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+
+    patch project_path(project), params: { project: { name: "" } }
+
+    assert_response :unprocessable_entity
+    assert_equal "Draft", project.reload.name
+    assert_select "dialog[data-modal-open-value=?]", "true"
+    assert_select ".field-errors"
+  end
+
+  test "cannot update another user's project" do
+    patch project_path(projects(:two)), params: { project: { name: "Hijacked" } }
+    assert_response :not_found
+  end
+
+  test "update with save_mode=save_as creates a new project with copied pages, leaving the original untouched" do
+    project = @user.projects.create!(name: "Original", format: :comic)
+    project.pages.create!(position: 1, name: "Page 1", data: { "schema_version" => 1, "panels" => [ { "id" => "p1" } ], "texts" => [] })
+    project.pages.create!(position: 2, name: "Page 2")
+
+    assert_difference "Project.count", 1 do
+      assert_difference "Page.count", 2 do
+        patch project_path(project), params: { save_mode: "save_as", project: { name: "Original copy" } }
+      end
+    end
+
+    new_project = @user.projects.order(:created_at).last
+    assert_redirected_to project_path(new_project)
+    assert_equal "Original copy", new_project.name
+    assert_equal project.format, new_project.format
+    assert_equal 2, new_project.pages.count
+    assert_equal [ { "id" => "p1" } ], new_project.pages.order(:position).first.data["panels"]
+
+    # original is untouched
+    assert_equal "Original", project.reload.name
+    assert_equal 2, project.pages.count
+  end
+
+  test "save_as defaults to 'Copy of' the original name when left blank" do
+    project = @user.projects.create!(name: "Original", format: :comic)
+    project.pages.create!(position: 1, name: "Page 1")
+
+    patch project_path(project), params: { save_mode: "save_as", project: { name: "" } }
+
+    assert_equal "Copy of Original", @user.projects.order(:created_at).last.name
+  end
+
+  test "save_as can file the copy into a folder" do
+    project = @user.projects.create!(name: "Original", format: :comic)
+    project.pages.create!(position: 1, name: "Page 1")
+    folder = @user.folders.create!(name: "Sketchbook")
+
+    patch project_path(project), params: { save_mode: "save_as", project: { name: "Original copy", folder_id: folder.id } }
+
+    assert_equal folder, @user.projects.order(:created_at).last.folder
+  end
+
+  test "save_as into another user's folder fails without creating a copy" do
+    project = @user.projects.create!(name: "Original", format: :comic)
+    project.pages.create!(position: 1, name: "Page 1")
+
+    assert_no_difference "Project.count" do
+      patch project_path(project), params: { save_mode: "save_as", project: { name: "Original copy", folder_id: folders(:two).id } }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "cannot save_as another user's project" do
+    assert_no_difference "Project.count" do
+      patch project_path(projects(:two)), params: { save_mode: "save_as", project: { name: "Stolen" } }
     end
     assert_response :not_found
   end

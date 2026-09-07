@@ -1,0 +1,11 @@
+<li class="project-list-item">
+  <span class="project-info">
+    <%= project.name %> (<%= project.format.humanize %>)
+    <br>
+    <small>Updated <%= time_ago_in_words(project.updated_at) %> ago &middot; <%= pluralize(project.pages.size, "page") %></small>
+  </span>
+  <div class="project-actions">
+    <%= link_to "View/Edit", project_path(project), class: "btn btn--view" %>
+    <%= button_to "Delete", project_path(project), method: :delete, class: "btn--danger", form: { class: "inline-form" } %>
+  </div>
+</li>

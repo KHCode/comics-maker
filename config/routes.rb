@@ -11,7 +11,7 @@ Rails.application.routes.draw do
 
   resource :session, only: %i[ new create destroy ]
   resources :users, only: %i[ new create ]
-  resources :projects, only: %i[ index show create destroy ] do
+  resources :projects, only: %i[ index show update create destroy ] do
     resources :pages, only: %i[ create update destroy ] do
       member do
         patch :grow
@@ -19,6 +19,7 @@ Rails.application.routes.draw do
       end
     end
   end
+  resources :folders, only: %i[ index show create ]
 
   # Defines the root path route ("/")
   root "projects#index"
