@@ -8,7 +8,10 @@ import { DocumentStore } from "kapow/document_store"
 // Future Layout/Draw/Letter mode controllers reach this page's store via
 // `this.application.getControllerForElementAndIdentifier(pageEl, "document-store").store`
 // and call `.mutate(...)` on it — this controller doesn't need to know
-// anything about what a panel or text is.
+// anything about what a panel or text is. After each mutation it dispatches
+// a "document-store:change" event on this element so renderer controllers
+// (panel_controller, and later draw/text controllers) can re-render,
+// without document_store_controller needing to know about any of them.
 export default class extends Controller {
   static values = {
     projectId: Number,
@@ -18,7 +21,8 @@ export default class extends Controller {
 
   connect() {
     this.store = new DocumentStore(this.initialDataValue, {
-      persist: (state) => this._persist(state)
+      persist: (state) => this._persist(state),
+      onChange: (state) => this.dispatch("change", { detail: { state } })
     })
   }
 
@@ -29,13 +33,15 @@ export default class extends Controller {
   }
 
   _persist(state) {
+    const headers = { "Content-Type": "application/json", "Accept": "application/json" }
+    // Absent when forgery protection is off (e.g. the test environment) —
+    // the server doesn't require the header in that case either.
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken
+
     return fetch(`/projects/${this.projectIdValue}/pages/${this.pageIdValue}`, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content
-      },
+      headers,
       body: JSON.stringify({ page: { panels: state.panels, texts: state.texts } })
     }).then((response) => {
       if (!response.ok) throw new Error(`Save failed with status ${response.status}`)
