@@ -1,0 +1,42 @@
+<div data-controller="modal">
+  <button type="button" class="btn" data-action="click->modal#open">Save</button>
+
+  <dialog data-modal-target="dialog" data-modal-open-value="<%= @open_save_dialog ? "true" : "false" %>" data-action="click->modal#closeOnBackdrop">
+    <h2>Save "<%= @project.name %>"</h2>
+
+    <% if @project.errors.any? %>
+      <ul class="field-errors">
+        <% @project.errors.full_messages.each do |message| %>
+          <li><%= message %></li>
+        <% end %>
+      </ul>
+    <% end %>
+
+    <%= form_with model: @project, url: project_path(@project), method: :patch do |form| %>
+      <%= form.label :name %><br>
+      <%= form.text_field :name, required: true %><br>
+
+      <%= form.label :folder_id, "Folder" %><br>
+      <%= form.select :folder_id, options_from_collection_for_select(@folders, :id, :name, @project.folder_id), include_blank: "My Comics" %><br>
+
+      <p><small>
+        Already in "<%= @project.folder&.name || "My Comics" %>":
+        <%= @folder_projects.any? ? @folder_projects.map(&:name).join(", ") : "nothing else yet" %>
+      </small></p>
+
+      <button type="submit" name="save_mode" value="save">Save</button>
+      <button type="submit" name="save_mode" value="save_as">Save As&hellip;</button>
+      <button type="button" data-action="click->modal#close">Cancel</button>
+    <% end %>
+
+    <details>
+      <summary>Create a new folder</summary>
+      <%= form_with model: Folder.new, url: folders_path do |form| %>
+        <%= hidden_field_tag :project_id, @project.id %>
+        <%= form.label :name, "Folder name" %>
+        <%= form.text_field :name, required: true %>
+        <%= form.submit "Create folder" %>
+      <% end %>
+    </details>
+  </dialog>
+</div>

@@ -1,0 +1,25 @@
+dialog {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  max-width: min(90vw, 480px);
+  width: 100%;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+
+/* Buttons inside any dialog use a lighter touch than the rest of the app's
+   chunky/hard-shadow style — a form dialog reads better with restrained,
+   standard-feeling buttons rather than big comic-sticker ones. */
+dialog button,
+dialog input[type="submit"] {
+  border-width: 1px;
+  border-radius: 6px;
+  box-shadow: none;
+  padding: 0.35rem 0.75rem;
+  font-weight: 600;
+}
