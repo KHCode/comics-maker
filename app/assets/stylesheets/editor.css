@@ -93,6 +93,38 @@
   cursor: nesw-resize;
 }
 
+.panel-handle--vertex {
+  fill: var(--color-accent);
+  stroke: var(--color-ink);
+  stroke-width: 2;
+  cursor: grab;
+}
+
+.panel-handle--midpoint {
+  fill: var(--color-paper);
+  stroke: var(--color-ink);
+  stroke-width: 2;
+  cursor: copy;
+}
+
+.panel-floating-bar .floating-bar-button rect {
+  fill: var(--color-surface-raised);
+  stroke: var(--color-ink);
+  stroke-width: 2.5;
+  cursor: pointer;
+}
+
+.panel-floating-bar .floating-bar-button--active rect {
+  fill: var(--color-accent);
+}
+
+.panel-floating-bar .floating-bar-button text {
+  font-size: 24px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
 .editor-footer {
   padding-bottom: 1rem;
   border-top: var(--border-width) solid var(--color-border);
