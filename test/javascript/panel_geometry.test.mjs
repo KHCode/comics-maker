@@ -7,7 +7,10 @@ import {
   translatePoints,
   scalePointsFromAnchor,
   cornerPoint,
-  scaleFromCornerDrag
+  scaleFromCornerDrag,
+  updateVertex,
+  insertMidpointVertex,
+  removeVertex
 } from "../../app/javascript/kapow/panel_geometry.js"
 
 const BOX = [ [ 100, 100 ], [ 300, 100 ], [ 300, 300 ], [ 100, 300 ] ]
@@ -106,4 +109,32 @@ test("scaleFromCornerDrag refuses to flip the panel inside-out past the anchor",
   const box = boundingBox(scaled)
   assert.ok(box.minX < box.maxX)
   assert.ok(box.minY < box.maxY)
+})
+
+test("updateVertex replaces only the point at the given index", () => {
+  assert.deepEqual(updateVertex(BOX, 1, 999, 888), [ [ 100, 100 ], [ 999, 888 ], [ 300, 300 ], [ 100, 300 ] ])
+})
+
+test("insertMidpointVertex inserts between an edge's two points", () => {
+  const next = insertMidpointVertex(BOX, 0)
+  assert.deepEqual(next, [ [ 100, 100 ], [ 200, 100 ], [ 300, 100 ], [ 300, 300 ], [ 100, 300 ] ])
+})
+
+test("insertMidpointVertex wraps around from the last point to the first", () => {
+  const next = insertMidpointVertex(BOX, 3)
+  assert.deepEqual(next, [ [ 100, 100 ], [ 300, 100 ], [ 300, 300 ], [ 100, 300 ], [ 100, 200 ] ])
+})
+
+test("removeVertex drops the point at the given index", () => {
+  assert.deepEqual(removeVertex(BOX, 1), [ [ 100, 100 ], [ 300, 300 ], [ 100, 300 ] ])
+})
+
+test("removeVertex refuses to go below the minimum vertex count", () => {
+  const triangle = [ [ 0, 0 ], [ 100, 0 ], [ 50, 100 ] ]
+  assert.deepEqual(removeVertex(triangle, 0), triangle)
+})
+
+test("removeVertex allows a custom minimum", () => {
+  const square = [ [ 0, 0 ], [ 100, 0 ], [ 100, 100 ], [ 0, 100 ] ]
+  assert.deepEqual(removeVertex(square, 0, 4), square)
 })
