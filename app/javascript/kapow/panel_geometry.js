@@ -66,3 +66,29 @@ export function scaleFromCornerDrag(pts, corner, pointerX, pointerY, minSize = 2
 
   return scalePointsFromAnchor(pts, anchorX, anchorY, scaleX, scaleY)
 }
+
+// Per-vertex shape editing (floating bar's ✎ mode): move a single vertex
+// freely, or insert/remove one.
+
+export function updateVertex(pts, index, x, y) {
+  return pts.map((pt, i) => (i === index ? [ x, y ] : pt))
+}
+
+// Inserts a new vertex at the midpoint of the edge from pts[index] to the
+// following point (wrapping around), matching the ◆ midpoint-tap gesture.
+export function insertMidpointVertex(pts, index) {
+  const a = pts[index]
+  const b = pts[(index + 1) % pts.length]
+  const midpoint = [ (a[0] + b[0]) / 2, (a[1] + b[1]) / 2 ]
+
+  const next = pts.slice()
+  next.splice(index + 1, 0, midpoint)
+  return next
+}
+
+// Removes the vertex at `index`, refusing to drop below `minVertices` (a
+// panel needs at least 3 points to remain a closed shape).
+export function removeVertex(pts, index, minVertices = 3) {
+  if (pts.length <= minVertices) return pts
+  return pts.filter((_, i) => i !== index)
+}
