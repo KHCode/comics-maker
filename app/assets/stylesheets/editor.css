@@ -70,6 +70,27 @@
   fill: none;
   stroke: var(--color-ink);
   stroke-width: 3;
+  cursor: move;
+  /* fill:none normally means only the stroke itself is clickable — this
+     makes the whole interior draggable too, without needing a visible fill. */
+  pointer-events: fill;
+}
+
+.panel-outline--selected {
+  stroke: var(--color-sfx-red);
+  stroke-dasharray: 10 6;
+}
+
+.panel-handle {
+  fill: var(--color-accent);
+  stroke: var(--color-ink);
+  stroke-width: 2;
+  cursor: nwse-resize;
+}
+
+.panel-handle[data-corner="ne"],
+.panel-handle[data-corner="sw"] {
+  cursor: nesw-resize;
 }
 
 .editor-footer {

@@ -44,7 +44,7 @@
               <%= button_to "Delete page", project_page_path(@project, page), method: :delete, class: "btn--subtle", form: { class: "inline-form" } %>
             <% end %>
           </div>
-          <svg class="page-canvas" data-panel-target="canvas" viewBox="0 0 <%= @project.page_width %> <%= page.height %>" role="img" aria-label="<%= page.name %>"></svg>
+          <svg class="page-canvas" data-panel-target="canvas" data-action="pointerdown->panel#deselectOnBackgroundPointerDown" viewBox="0 0 <%= @project.page_width %> <%= page.height %>" role="img" aria-label="<%= page.name %>"></svg>
         </div>
       <% end %>
     </div>
