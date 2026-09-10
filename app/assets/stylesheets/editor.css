@@ -17,6 +17,11 @@
   padding: 1rem;
   border-bottom: var(--border-width) solid var(--color-border);
   background: var(--color-surface-raised);
+  /* Stays above .page--focused's fixed, full-viewport overlay — otherwise
+     header/footer controls (mode tabs, Whole page, Sign out) would be
+     covered and unreachable while a panel is focused. */
+  position: relative;
+  z-index: 200;
 }
 
 .editor-project-name {
@@ -28,6 +33,14 @@
   flex: 1;
   min-height: 0; /* let this child shrink and scroll internally, instead of growing past .editor's fixed height */
   overflow-y: auto;
+}
+
+.editor-canvas--locked {
+  /* Applied while a panel is focused (see panel_controller.js#focusPanel)
+     so the page list can't be scrolled behind the fixed focus overlay —
+     it wouldn't be visible anyway, but leaving it scrollable would still
+     move the scroll position out from under the user. */
+  overflow-y: hidden;
 }
 
 .pages {
@@ -51,6 +64,62 @@
      target — otherwise those always silently applied to the newest page,
      with no way to tell which page was about to be affected. */
   outline-color: var(--color-accent);
+}
+
+.page--focused {
+  /* Draw mode's zoomed-in focus view (see panel_controller.js#focusPanel):
+     pulled out of the normal page list and blown up to fill the canvas
+     area, rather than staying pinned to the same small in-flow box the
+     page normally renders at. Fixed (not absolute) so it's anchored to
+     the viewport itself and stays centered/reachable no matter how far
+     the page list had been scrolled when the panel was tapped — an
+     absolutely-positioned overlay would inherit whatever scroll position
+     the (now-hidden) page list was left at. top/left/width/height are set
+     inline by positionFocusOverlay() (not inset: 0) — the visible gap
+     between header and footer isn't centered on the viewport unless
+     they're exactly the same height, so this pins the overlay to
+     .editor-canvas's own measured rect instead. No padding — this fills
+     the canvas area exactly, so the panel itself (grown via
+     .page-canvas's own max-width/max-height below) gets the most room
+     possible; it's still letterboxed to keep its aspect ratio rather
+     than stretching to fill unevenly, so it won't touch the true edges
+     on every side unless its own aspect ratio happens to match. */
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface);
+}
+
+.page--focused .page-toolbar {
+  display: none;
+}
+
+.page--focused .page-canvas {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.page-focus-exit {
+  display: none;
+  /* Positioned relative to .page--focused (itself position: fixed, sized
+     to exactly .editor-canvas's rect — see positionFocusOverlay()), not
+     independently fixed to the viewport — the header sits above it
+     (z-index 200 > .page--focused's 100) and would otherwise paint over
+     a viewport-anchored button pinned near the top-right corner. */
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1;
+}
+
+.page--focused .page-focus-exit {
+  /* The real footer's "Whole page" button is covered by this overlay, so
+     focus needs its own reachable way out. */
+  display: inline-flex;
 }
 
 .page-toolbar {
@@ -153,10 +222,23 @@
   fill: var(--color-ink);
 }
 
+.panel-focus-dim {
+  /* Draw mode's zoomed-in focus view — dims everything in the (already
+     cropped-in, see panel_controller.js#updateFocusViewBox) visible area
+     except the focused panel itself, which this path's fill-rule punches
+     a hole for. Tapping it exits focus, same as tapping the background. */
+  fill: rgba(0, 0, 0, 0.55);
+  cursor: zoom-out;
+}
+
 .editor-footer {
   padding-bottom: 1rem;
   border-top: var(--border-width) solid var(--color-border);
   background: var(--color-surface-raised);
+  /* See .editor-header — stays above .page--focused's fixed overlay so
+     mode tabs and the Draw tray's "Whole page" button stay reachable. */
+  position: relative;
+  z-index: 200;
 }
 
 .mode-tabs {
@@ -195,6 +277,11 @@
 .tray-label {
   font-weight: 800;
   margin-right: 0.25rem;
+}
+
+.tray-hint {
+  opacity: 0.7;
+  font-size: 0.9em;
 }
 
 .empty-state-hint {

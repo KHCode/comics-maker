@@ -20,7 +20,7 @@ const ADD_PANEL_OFFSET_CYCLE = 5
 // ever-growing canvas: see applyWebtoonPreset.
 export default class extends Controller {
   static targets = ["tab", "tray", "emptyHint", "page"]
-  static values = { format: String, pageUnitHeight: Number }
+  static values = { format: String, pageUnitHeight: Number, mode: String }
 
   connect() {
     this.activePageElement = null
@@ -29,6 +29,7 @@ export default class extends Controller {
 
   switchMode(event) {
     const mode = event.currentTarget.dataset.mode
+    this.modeValue = mode
 
     this.tabTargets.forEach((tab) => {
       tab.classList.toggle("mode-tab--active", tab.dataset.mode === mode)
@@ -37,6 +38,23 @@ export default class extends Controller {
     this.trayTargets.forEach((tray) => {
       tray.hidden = tray.dataset.mode !== mode
     })
+
+    // Layout's selection UI and Draw's zoomed-in focus are mode-specific —
+    // leaving either mode resets it, rather than letting it linger and
+    // resurface (still selected/still zoomed) if the user tabs back.
+    this.pageTargets.forEach((pageEl) => {
+      const panelController = this.panelControllerFor(pageEl)
+      panelController?.deselect()
+      panelController?.exitFocus()
+    })
+  }
+
+  // Draw tray's "Whole page" button — panel_controller reads the current
+  // mode straight off this element's data-editor-mode-value attribute
+  // (see panel_controller.js#currentMode), so exiting focus doesn't need
+  // its own mode check here.
+  exitFocus() {
+    this.pageTargets.forEach((pageEl) => this.panelControllerFor(pageEl)?.exitFocus())
   }
 
   selectPage(event) {
@@ -125,6 +143,10 @@ export default class extends Controller {
 
   documentStoreControllerFor(pageEl) {
     return this.application.getControllerForElementAndIdentifier(pageEl, "document-store")
+  }
+
+  panelControllerFor(pageEl) {
+    return this.application.getControllerForElementAndIdentifier(pageEl, "panel")
   }
 
   pageDimensions(pageEl) {

@@ -1,5 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
-import { panelToRenderData, pointsToAttr, clipPathId } from "kapow/panel_render"
+import { panelToRenderData, pointsToAttr, pointsToPathD, clipPathId } from "kapow/panel_render"
 import { generateId } from "kapow/panel_shapes"
 import {
   boundingBox,
@@ -20,6 +20,11 @@ const BAR_BUTTON_SIZE = 44
 const BAR_BUTTON_GAP = 8
 const BAR_MARGIN_ABOVE = 12
 const DUPLICATE_OFFSET = 24
+
+// How much margin (as a fraction of the focused panel's own width/height)
+// stays visible around it when zoomed in — enough to see it's dimmed
+// context, not so much that the panel itself stops filling the view.
+const FOCUS_MARGIN_RATIO = 0.15
 
 // Renders panels as SVG shapes with matching clip-paths (see
 // kapow/panel_render.js), and handles selecting, dragging (move),
@@ -42,6 +47,8 @@ export default class extends Controller {
 
     this.selectedPanelId = null
     this.shapeMode = false
+    this.focusedPanelId = null
+    this.originalViewBox = this.canvasTarget.getAttribute("viewBox")
     this.boundHandleKeydown = this.handleKeydown.bind(this)
     document.addEventListener("keydown", this.boundHandleKeydown)
     this.renderAll(this.currentPanels)
@@ -56,7 +63,13 @@ export default class extends Controller {
   }
 
   deselectOnBackgroundPointerDown(event) {
-    if (event.target === this.canvasTarget) this.deselect()
+    if (event.target !== this.canvasTarget) return
+
+    if (this.focusedPanelId) {
+      this.exitFocus()
+    } else {
+      this.deselect()
+    }
   }
 
   handleKeydown(event) {
@@ -74,12 +87,19 @@ export default class extends Controller {
 
   renderAll(panels) {
     this.clear()
-    for (const panel of panels) this.renderPanel(panel)
+    // Sibling panels are left out entirely while focused, not just dimmed —
+    // their strokes would otherwise show through the (translucent) focus
+    // overlay, made worse by stroke-width scaling up along with the zoom.
+    const panelsToRender = this.focusedPanelId
+      ? panels.filter((panel) => panel.id === this.focusedPanelId)
+      : panels
+    for (const panel of panelsToRender) this.renderPanel(panel)
     this.renderSelectionUI(panels)
+    this.renderFocusOverlay(panels)
   }
 
   clear() {
-    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-handle, :scope > .panel-floating-bar, :scope > defs").forEach((el) => el.remove())
+    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-handle, :scope > .panel-floating-bar, :scope > .panel-focus-dim, :scope > defs").forEach((el) => el.remove())
     this._defs = null
     this._floatingBar = null
   }
@@ -99,8 +119,37 @@ export default class extends Controller {
     polygon.setAttribute("class", panel.id === this.selectedPanelId ? "panel-outline panel-outline--selected" : "panel-outline")
     polygon.setAttribute("clip-path", `url(#${clipId})`)
     polygon.dataset.panelId = panel.id
-    polygon.addEventListener("pointerdown", (event) => this.startMove(event, panel.id))
+    polygon.addEventListener("pointerdown", (event) => this.handlePanelPointerDown(event, panel.id))
     this.canvasTarget.appendChild(polygon)
+  }
+
+  // Draw mode's zoomed-in focus view: a dark overlay covering the whole
+  // (already-zoomed, see updateFocusViewBox) visible area with the
+  // focused panel's own shape cut out of it via fill-rule: evenodd —
+  // "dimming the rest of the page" without needing a second element per
+  // panel or a <mask>.
+  renderFocusOverlay(panels) {
+    if (!this.focusedPanelId) return
+    const panel = panels.find((p) => p.id === this.focusedPanelId)
+    if (!panel) return
+
+    const viewBox = this.canvasTarget.viewBox.baseVal
+    const outerPts = [
+      [ viewBox.x, viewBox.y ],
+      [ viewBox.x + viewBox.width, viewBox.y ],
+      [ viewBox.x + viewBox.width, viewBox.y + viewBox.height ],
+      [ viewBox.x, viewBox.y + viewBox.height ]
+    ]
+
+    const overlay = document.createElementNS(SVG_NS, "path")
+    overlay.setAttribute("class", "panel-focus-dim")
+    overlay.setAttribute("fill-rule", "evenodd")
+    overlay.setAttribute("d", `${pointsToPathD(outerPts)} ${pointsToPathD(panel.pts)}`)
+    overlay.addEventListener("pointerdown", (event) => {
+      event.stopPropagation()
+      this.exitFocus()
+    })
+    this.canvasTarget.appendChild(overlay)
   }
 
   renderSelectionUI(panels) {
@@ -317,9 +366,18 @@ export default class extends Controller {
     this.renderAll(this.currentPanels)
   }
 
-  startMove(event, panelId) {
+  // Layout mode taps a panel to select/drag it; Draw mode taps a panel to
+  // zoom into it instead (see focusPanel) — Letter mode doesn't act on a
+  // panel tap at all (text elements are their own future layer).
+  handlePanelPointerDown(event, panelId) {
     event.stopPropagation()
     event.preventDefault()
+
+    if (this.currentMode === "draw") {
+      this.focusPanel(panelId)
+      return
+    }
+    if (this.currentMode !== "layout") return
 
     // A bubbling Stimulus event rather than relying on the native
     // pointerdown/click bubbling up to the page: this pointerdown already
@@ -333,6 +391,133 @@ export default class extends Controller {
     this.beginDrag(panelId, (originalPts, current) =>
       translatePoints(originalPts, current.x - startPoint.x, current.y - startPoint.y)
     )
+  }
+
+  focusPanel(panelId) {
+    if (this.focusedPanelId === panelId) return
+    this.focusedPanelId = panelId
+    // .page--focused (see editor.css) is what actually makes the panel
+    // grow to fill the canvas area — the viewBox change alone only
+    // re-crops the SVG's own internal camera, it doesn't touch the
+    // fixed-size box that SVG sits in. The scroll-canvas is locked
+    // alongside it so the (now-hidden) page list can't be scrolled out
+    // from under the user while they're focused on a panel.
+    this.element.classList.add("page--focused")
+    this.editorCanvasElement?.classList.add("editor-canvas--locked")
+    this.boundPositionFocusOverlay ||= () => {
+      this.positionFocusOverlay()
+      this.updateFocusViewBox()
+      this.renderAll(this.currentPanels)
+    }
+    window.addEventListener("resize", this.boundPositionFocusOverlay)
+    this.positionFocusOverlay()
+    // Removing the container's own padding (see .page--focused in
+    // editor.css) means the panel can grow right up to the container's
+    // edges on whichever axis its own aspect ratio allows — but the other
+    // axis still letterboxes onto the container's own background, outside
+    // the SVG entirely. Exiting on a tap there needs its own listener; the
+    // dim overlay's tap-to-exit (see renderFocusOverlay) only covers the
+    // margin *inside* the SVG's viewBox.
+    this.boundExitFocusOnBackgroundClick ||= (event) => {
+      if (event.target === this.element) this.exitFocus()
+    }
+    this.element.addEventListener("pointerdown", this.boundExitFocusOnBackgroundClick)
+    this.updateFocusViewBox()
+    this.renderAll(this.currentPanels)
+  }
+
+  exitFocus() {
+    if (!this.focusedPanelId) return
+    this.focusedPanelId = null
+    this.element.classList.remove("page--focused")
+    this.editorCanvasElement?.classList.remove("editor-canvas--locked")
+    if (this.boundPositionFocusOverlay) window.removeEventListener("resize", this.boundPositionFocusOverlay)
+    if (this.boundExitFocusOnBackgroundClick) this.element.removeEventListener("pointerdown", this.boundExitFocusOnBackgroundClick)
+    this.element.style.removeProperty("top")
+    this.element.style.removeProperty("left")
+    this.element.style.removeProperty("width")
+    this.element.style.removeProperty("height")
+    this.canvasTarget.setAttribute("viewBox", this.originalViewBox)
+    this.renderAll(this.currentPanels)
+  }
+
+  // .page--focused is `position: fixed` so it's immune to .editor-canvas's
+  // own scrolling (see the class's comment in editor.css), but that means
+  // plain `inset: 0` would center it on the *whole* viewport rather than
+  // just the visible gap between header and footer — and since those
+  // aren't the same height, "centered in the viewport" isn't the same
+  // point as "centered in the gap" (it wrongly favors whichever of the
+  // two is shorter). Measuring .editor-canvas's own rect and pinning the
+  // overlay to exactly that gets both: scroll-immune, and actually
+  // centered where the page list would otherwise be.
+  positionFocusOverlay() {
+    const canvasRect = this.editorCanvasElement?.getBoundingClientRect()
+    if (!canvasRect) return
+
+    this.element.style.top = `${canvasRect.top}px`
+    this.element.style.left = `${canvasRect.left}px`
+    this.element.style.width = `${canvasRect.width}px`
+    this.element.style.height = `${canvasRect.height}px`
+  }
+
+  updateFocusViewBox() {
+    const panel = this.currentPanels.find((p) => p.id === this.focusedPanelId)
+    if (!panel) return
+
+    const box = boundingBox(panel.pts)
+    const width = box.maxX - box.minX
+    const height = box.maxY - box.minY
+    const marginX = Math.max(width, 1) * FOCUS_MARGIN_RATIO
+    const marginY = Math.max(height, 1) * FOCUS_MARGIN_RATIO
+
+    let boxWidth = width + marginX * 2
+    let boxHeight = height + marginY * 2
+
+    // Match the container's own aspect ratio so the SVG fills it exactly
+    // on *both* axes (see .page-canvas's max-width/max-height in
+    // editor.css) — otherwise, unless the panel's own aspect ratio
+    // happens to match the container's, one axis always letterboxes onto
+    // .page--focused's plain background. This grows the *view* (more
+    // dimmed context on whichever axis needs it), never the panel itself,
+    // so nothing about the panel's own shape gets stretched or distorted.
+    const containerRect = this.editorCanvasElement?.getBoundingClientRect()
+    if (containerRect && containerRect.width > 0 && containerRect.height > 0) {
+      const containerRatio = containerRect.width / containerRect.height
+      if (boxWidth / boxHeight > containerRatio) {
+        boxHeight = boxWidth / containerRatio
+      } else {
+        boxWidth = boxHeight * containerRatio
+      }
+    }
+
+    const centerX = box.minX + width / 2
+    const centerY = box.minY + height / 2
+
+    const viewBox = [
+      centerX - boxWidth / 2,
+      centerY - boxHeight / 2,
+      boxWidth,
+      boxHeight
+    ].join(" ")
+    this.canvasTarget.setAttribute("viewBox", viewBox)
+  }
+
+  get currentMode() {
+    return this.editorElement?.dataset.editorModeValue || "layout"
+  }
+
+  get editorElement() {
+    if (!this._editorElement) {
+      this._editorElement = this.element.closest('[data-controller~="editor"]')
+    }
+    return this._editorElement
+  }
+
+  get editorCanvasElement() {
+    if (!this._editorCanvasElement) {
+      this._editorCanvasElement = this.element.closest(".editor-canvas")
+    }
+    return this._editorCanvasElement
   }
 
   startScale(event, panelId, corner) {

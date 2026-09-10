@@ -25,3 +25,11 @@ export function clipPathId(panelId) {
 export function pointsToAttr(pts) {
   return pts.map(([ x, y ]) => `${x},${y}`).join(" ")
 }
+
+// A closed <path> "d" attribute for the same points — used where multiple
+// subpaths need to combine (e.g. Draw mode's focus dimming, which unions
+// an outer rect with an inner panel shape via fill-rule: evenodd to
+// "punch a hole"), which a single <polygon> can't express.
+export function pointsToPathD(pts) {
+  return `M ${pts.map(([ x, y ]) => `${x},${y}`).join(" L ")} Z`
+}

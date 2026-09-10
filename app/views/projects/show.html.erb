@@ -1,4 +1,4 @@
-<div class="editor" data-controller="editor" data-editor-format-value="<%= @project.format %>" data-editor-page-unit-height-value="<%= @project.page_unit_height %>">
+<div class="editor" data-controller="editor" data-editor-format-value="<%= @project.format %>" data-editor-page-unit-height-value="<%= @project.page_unit_height %>" data-editor-mode-value="layout">
   <header class="editor-header">
     <%= render "shared/logo" %>
 
@@ -46,6 +46,7 @@
             <% end %>
           </div>
           <svg class="page-canvas" data-panel-target="canvas" data-action="pointerdown->panel#deselectOnBackgroundPointerDown" viewBox="0 0 <%= @project.page_width %> <%= page.height %>" role="img" aria-label="<%= page.name %>"></svg>
+          <button type="button" class="page-focus-exit" data-action="click->panel#exitFocus">✕ Whole page</button>
         </div>
       <% end %>
     </div>
@@ -73,7 +74,12 @@
         <% end %>
       </div>
     </div>
-    <div class="contextual-tray" data-editor-target="tray" data-mode="draw" hidden>Draw tools will go here.</div>
+    <div class="contextual-tray" data-editor-target="tray" data-mode="draw" hidden>
+      <div class="tray-section">
+        <button type="button" data-action="click->editor#exitFocus">Whole page</button>
+        <span class="tray-hint">Tap a panel to zoom in and draw.</span>
+      </div>
+    </div>
     <div class="contextual-tray" data-editor-target="tray" data-mode="letter" hidden>Letter tools will go here.</div>
   </footer>
 </div>
