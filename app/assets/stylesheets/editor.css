@@ -40,6 +40,19 @@
   padding: 2rem 0;
 }
 
+.page {
+  border-radius: var(--radius);
+  outline: 3px solid transparent;
+  outline-offset: 6px;
+}
+
+.page--active {
+  /* Marks which page "Add panel"/preset actions in the tray below will
+     target — otherwise those always silently applied to the newest page,
+     with no way to tell which page was about to be affected. */
+  outline-color: var(--color-accent);
+}
+
 .page-toolbar {
   display: flex;
   align-items: center;
@@ -60,6 +73,11 @@
   border-radius: calc(var(--radius) / 2);
   /* The comic page itself always stays white, regardless of theme. */
   background: #fff;
+  /* Overrides the SVG default of clipping to the viewBox — per the doc,
+     content dragged or laid out past the page edge stays visible "on the
+     desk" rather than disappearing (e.g. a Webtoon preset applied before
+     the page has been grown enough to fit it). */
+  overflow: visible;
 }
 
 .panel-outline {
@@ -123,6 +141,16 @@
   text-anchor: middle;
   dominant-baseline: central;
   pointer-events: none;
+  /* Theme-aware so the glyph stays readable against --color-surface-raised
+     (near-black in dark mode) — SVG text defaults to a black fill, which is
+     invisible there. */
+  fill: var(--color-text);
+}
+
+.panel-floating-bar .floating-bar-button--active text {
+  /* Explicit ink, not --color-text: the accent fill stays bright yellow in
+     dark mode too, so the theme-swapped text would be unreadable. */
+  fill: var(--color-ink);
 }
 
 .editor-footer {

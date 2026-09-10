@@ -1,4 +1,4 @@
-<div class="editor" data-controller="editor" data-editor-format-value="<%= @project.format %>">
+<div class="editor" data-controller="editor" data-editor-format-value="<%= @project.format %>" data-editor-page-unit-height-value="<%= @project.page_unit_height %>">
   <header class="editor-header">
     <%= render "shared/logo" %>
 
@@ -34,7 +34,8 @@
       <% @pages.each do |page| %>
         <div class="page"
              data-controller="document-store panel"
-             data-action="document-store:change->panel#refresh"
+             data-editor-target="page"
+             data-action="document-store:change->panel#refresh click->editor#selectPage panel:selected->editor#selectPage"
              data-document-store-project-id-value="<%= @project.id %>"
              data-document-store-page-id-value="<%= page.id %>"
              data-document-store-initial-data-value="<%= page.data.to_json %>">

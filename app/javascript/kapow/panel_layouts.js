@@ -12,7 +12,7 @@
 // injection sidesteps that entirely, and keeps this file just as
 // Node-testable.
 
-const GUTTER = 20
+export const GUTTER = 20
 
 // An evenly-spaced grid of `rows` × `cols` box panels.
 export function gridPreset(pageWidth, pageHeight, rows, cols, makePanel, gutter = GUTTER) {

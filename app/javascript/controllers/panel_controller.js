@@ -321,6 +321,12 @@ export default class extends Controller {
     event.stopPropagation()
     event.preventDefault()
 
+    // A bubbling Stimulus event rather than relying on the native
+    // pointerdown/click bubbling up to the page: this pointerdown already
+    // calls stopPropagation (and Chrome drops the compatibility "click"
+    // entirely once pointerdown's preventDefault is called), so an
+    // ancestor listening for either would never see this interaction.
+    this.dispatch("selected", { bubbles: true })
     this.select(panelId)
 
     const startPoint = this.svgPoint(event)
