@@ -6,13 +6,18 @@ local:
   service: Disk
   root: <%= Rails.root.join("storage") %>
 
-# Use bin/rails credentials:edit to set the AWS secrets (as aws:access_key_id|secret_access_key)
-# amazon:
-#   service: S3
-#   access_key_id: <%= Rails.application.credentials.dig(:aws, :access_key_id) %>
-#   secret_access_key: <%= Rails.application.credentials.dig(:aws, :secret_access_key) %>
-#   region: us-east-1
-#   bucket: your_own_bucket-<%= Rails.env %>
+# Heroku dynos have an ephemeral filesystem — anything written to :local
+# (above) is gone on the next restart/deploy/scale event. Credentials come
+# from Heroku config vars (not Rails credentials) so the bucket can be
+# swapped or rotated without a new deploy. See config/environments/
+# production.rb for where this is selected, and Aptfile/app.json for the
+# libvips system dependency image_processing needs to generate variants.
+production:
+  service: S3
+  access_key_id: <%= ENV.fetch("AWS_ACCESS_KEY_ID") %>
+  secret_access_key: <%= ENV.fetch("AWS_SECRET_ACCESS_KEY") %>
+  region: <%= ENV.fetch("AWS_REGION", "us-east-1") %>
+  bucket: <%= ENV.fetch("AWS_BUCKET") %>
 
 # Remember not to checkin your GCS keyfile to a repository
 # google:

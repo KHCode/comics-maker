@@ -1,0 +1,34 @@
+{
+  "name": "Kapow",
+  "description": "Kapow — a tablet-first browser comic book editor.",
+  "repository": "https://github.com/KHCode/comics-maker",
+  "buildpacks": [
+    { "url": "heroku-community/apt" },
+    { "url": "heroku/ruby" }
+  ],
+  "addons": [
+    "heroku-postgresql"
+  ],
+  "env": {
+    "RAILS_MASTER_KEY": {
+      "description": "Decrypts config/credentials.yml.enc — required for Rails to boot in production.",
+      "required": true
+    },
+    "AWS_ACCESS_KEY_ID": {
+      "description": "IAM access key for the S3 bucket used to store uploaded photos (Active Storage). See config/storage.yml.",
+      "required": true
+    },
+    "AWS_SECRET_ACCESS_KEY": {
+      "description": "Secret key for AWS_ACCESS_KEY_ID.",
+      "required": true
+    },
+    "AWS_REGION": {
+      "description": "AWS region the S3 bucket lives in.",
+      "value": "us-east-1"
+    },
+    "AWS_BUCKET": {
+      "description": "Name of the (already-created) S3 bucket used to store uploaded photos.",
+      "required": true
+    }
+  }
+}
