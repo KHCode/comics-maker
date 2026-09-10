@@ -2,7 +2,7 @@
 
 import test from "node:test"
 import assert from "node:assert/strict"
-import { panelToRenderData, clipPathId, pointsToAttr } from "../../app/javascript/kapow/panel_render.js"
+import { panelToRenderData, clipPathId, pointsToAttr, pointsToPathD } from "../../app/javascript/kapow/panel_render.js"
 
 function ellipsePoints(cx, cy, rx, ry, count = 14) {
   return Array.from({ length: count }, (_, i) => {
@@ -70,4 +70,8 @@ test("renders a Burst panel (20-point star)", () => {
 
   assert.equal(pts.length, 20)
   assert.equal(data.pointsAttr.split(" ").length, 20)
+})
+
+test("pointsToPathD renders a closed path with M/L/Z", () => {
+  assert.equal(pointsToPathD([ [ 0, 0 ], [ 100, 0 ], [ 100, 100 ] ]), "M 0,0 L 100,0 L 100,100 Z")
 })
