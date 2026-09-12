@@ -2,6 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import { newPanel } from "kapow/panel_shapes"
 import { generatePreset, GUTTER } from "kapow/panel_layouts"
 import { boundingBox, translatePoints } from "kapow/panel_geometry"
+import { INK_COLORS } from "kapow/ink"
 
 // New single-panel adds are dropped near page center, offset a bit further
 // each time so several adds in a row don't stack exactly on top of each
@@ -19,12 +20,22 @@ const ADD_PANEL_OFFSET_CYCLE = 5
 // page" the way paginated formats do, since the page is one continuous,
 // ever-growing canvas: see applyWebtoonPreset.
 export default class extends Controller {
-  static targets = ["tab", "tray", "emptyHint", "page"]
-  static values = { format: String, pageUnitHeight: Number, mode: String }
+  static targets = ["tab", "tray", "emptyHint", "page", "drawTool", "drawColor", "drawSize"]
+  static values = {
+    format: String,
+    pageUnitHeight: Number,
+    mode: String,
+    drawTool: { type: String, default: "pen" },
+    drawColor: { type: String, default: INK_COLORS[0] },
+    drawSize: { type: String, default: "m" }
+  }
 
   connect() {
     this.activePageElement = null
     this.markActivePage(this.newestPageElement)
+    this.updateDrawToolUI()
+    this.updateDrawColorUI()
+    this.updateDrawSizeUI()
   }
 
   switchMode(event) {
@@ -46,6 +57,45 @@ export default class extends Controller {
       const panelController = this.panelControllerFor(pageEl)
       panelController?.deselect()
       panelController?.exitFocus()
+    })
+  }
+
+  // Draw tray's tool/color/size buttons — panel_controller.js reads these
+  // straight off this element's own data attributes (see its
+  // currentDrawTool/currentDrawColor/currentDrawSize getters) rather than
+  // through an event, the same pattern currentMode already uses, since the
+  // setting applies to whichever panel gets drawn on next rather than to
+  // any one page.
+  selectDrawTool(event) {
+    this.drawToolValue = event.currentTarget.dataset.tool
+    this.updateDrawToolUI()
+  }
+
+  selectDrawColor(event) {
+    this.drawColorValue = event.currentTarget.dataset.color
+    this.updateDrawColorUI()
+  }
+
+  selectDrawSize(event) {
+    this.drawSizeValue = event.currentTarget.dataset.size
+    this.updateDrawSizeUI()
+  }
+
+  updateDrawToolUI() {
+    this.drawToolTargets.forEach((button) => {
+      button.classList.toggle("ink-tool--active", button.dataset.tool === this.drawToolValue)
+    })
+  }
+
+  updateDrawColorUI() {
+    this.drawColorTargets.forEach((button) => {
+      button.classList.toggle("ink-color--active", button.dataset.color === this.drawColorValue)
+    })
+  }
+
+  updateDrawSizeUI() {
+    this.drawSizeTargets.forEach((button) => {
+      button.classList.toggle("ink-size--active", button.dataset.size === this.drawSizeValue)
     })
   }
 

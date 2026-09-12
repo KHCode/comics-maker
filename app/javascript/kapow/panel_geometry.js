@@ -37,12 +37,13 @@ export function cornerPoint(pts, corner) {
   return [ side.x === "min" ? minX : maxX, side.y === "min" ? minY : maxY ]
 }
 
-// Scales `pts` as if the user dragged the given corner to (pointerX,
-// pointerY), anchored at the opposite corner — free (non-aspect-locked)
-// resize, matching a typical corner-handle drag. `minSize` keeps the
-// panel from collapsing to zero or flipping inside-out if dragged past
-// the anchor.
-export function scaleFromCornerDrag(pts, corner, pointerX, pointerY, minSize = 20) {
+// Computes the anchor point and per-axis scale factors a corner-handle
+// drag implies (free/non-aspect-locked, clamped so the panel can't
+// collapse to zero or flip inside-out past the anchor) — split out from
+// scaleFromCornerDrag so panel_controller.js can apply the exact same
+// transform to a panel's ink strokes (pts and stroke width) as it drags,
+// not just to the panel's own pts.
+export function cornerScaleFactors(pts, corner, pointerX, pointerY, minSize = 20) {
   const side = CORNERS[corner]
   if (!side) throw new Error(`Unknown corner: ${corner}`)
 
@@ -61,9 +62,18 @@ export function scaleFromCornerDrag(pts, corner, pointerX, pointerY, minSize = 2
   const minScaleX = width > 0 ? minSize / width : 1
   const minScaleY = height > 0 ? minSize / height : 1
 
-  const scaleX = Math.max(rawScaleX, minScaleX)
-  const scaleY = Math.max(rawScaleY, minScaleY)
+  return {
+    anchorX,
+    anchorY,
+    scaleX: Math.max(rawScaleX, minScaleX),
+    scaleY: Math.max(rawScaleY, minScaleY)
+  }
+}
 
+// Scales `pts` as if the user dragged the given corner to (pointerX,
+// pointerY) — see cornerScaleFactors above for the actual math.
+export function scaleFromCornerDrag(pts, corner, pointerX, pointerY, minSize = 20) {
+  const { anchorX, anchorY, scaleX, scaleY } = cornerScaleFactors(pts, corner, pointerX, pointerY, minSize)
   return scalePointsFromAnchor(pts, anchorX, anchorY, scaleX, scaleY)
 }
 

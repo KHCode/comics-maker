@@ -77,6 +77,24 @@
     </div>
     <div class="contextual-tray" data-editor-target="tray" data-mode="draw" hidden>
       <div class="tray-section">
+        <span class="tray-label">Tool</span>
+        <button type="button" class="ink-tool" data-editor-target="drawTool" data-tool="pen" data-action="click->editor#selectDrawTool">✎ Pen</button>
+        <button type="button" class="ink-tool" data-editor-target="drawTool" data-tool="marker" data-action="click->editor#selectDrawTool">🖊 Marker</button>
+        <button type="button" class="ink-tool" data-editor-target="drawTool" data-tool="eraser" data-action="click->editor#selectDrawTool">⌫ Eraser</button>
+      </div>
+      <div class="tray-section">
+        <span class="tray-label">Color</span>
+        <% EditorHelper::INK_COLORS.each do |hex| %>
+          <button type="button" class="ink-color" style="background-color: <%= hex %>;" data-editor-target="drawColor" data-color="<%= hex %>" data-action="click->editor#selectDrawColor" aria-label="Ink color <%= hex %>"></button>
+        <% end %>
+      </div>
+      <div class="tray-section">
+        <span class="tray-label">Size</span>
+        <button type="button" class="ink-size" data-editor-target="drawSize" data-size="s" data-action="click->editor#selectDrawSize">S</button>
+        <button type="button" class="ink-size" data-editor-target="drawSize" data-size="m" data-action="click->editor#selectDrawSize">M</button>
+        <button type="button" class="ink-size" data-editor-target="drawSize" data-size="l" data-action="click->editor#selectDrawSize">L</button>
+      </div>
+      <div class="tray-section">
         <button type="button" data-action="click->editor#exitFocus">Whole page</button>
         <span class="tray-hint">Tap a panel to zoom in and draw.</span>
       </div>

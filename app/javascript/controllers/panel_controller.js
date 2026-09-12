@@ -5,10 +5,13 @@ import {
   boundingBox,
   translatePoints,
   scaleFromCornerDrag,
+  cornerScaleFactors,
+  scalePointsFromAnchor,
   updateVertex,
   insertMidpointVertex,
   removeVertex
 } from "kapow/panel_geometry"
+import { INK_TOOLS, INK_SIZES, INK_COLORS, pressureOrDefault, strokeWidth, eraseStrokes } from "kapow/ink"
 
 const SVG_NS = "http://www.w3.org/2000/svg"
 const HANDLE_SIZE = 24 // page units, not screen pixels
@@ -26,6 +29,12 @@ const DUPLICATE_OFFSET = 24
 // edge into the dimmed context, not a large buffer that eats into how big
 // the panel itself renders.
 const FOCUS_MARGIN_RATIO = 0.04
+
+// The eraser's hit-test radius (page units) is a multiple of the current
+// brush size's base width — bigger than the equivalent pen/marker stroke
+// so it's actually usable as an eraser rather than requiring pixel-precise
+// passes over thin ink lines.
+const ERASER_RADIUS_MULTIPLIER = 1.5
 
 // Renders panels as SVG shapes with matching clip-paths (see
 // kapow/panel_render.js), and handles selecting, dragging (move),
@@ -100,7 +109,7 @@ export default class extends Controller {
   }
 
   clear() {
-    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-handle, :scope > .panel-floating-bar, :scope > .panel-focus-dim, :scope > defs").forEach((el) => el.remove())
+    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-handle, :scope > .panel-floating-bar, :scope > .panel-focus-dim, :scope > .panel-ink, :scope > defs").forEach((el) => el.remove())
     this._defs = null
     this._floatingBar = null
   }
@@ -115,6 +124,16 @@ export default class extends Controller {
     clipPath.appendChild(clipPolygon)
     this.defs.appendChild(clipPath)
 
+    // Ink is appended (and clipped to the panel's own shape) before the
+    // outline polygon below, so the panel's border always renders crisp on
+    // top of any ink that reaches its edge, rather than being painted over.
+    const inkGroup = document.createElementNS(SVG_NS, "g")
+    inkGroup.setAttribute("class", "panel-ink")
+    inkGroup.setAttribute("clip-path", `url(#${clipId})`)
+    inkGroup.dataset.panelId = panel.id
+    this.canvasTarget.appendChild(inkGroup)
+    this.renderInkGroup(panel.id, panel.strokes)
+
     const polygon = document.createElementNS(SVG_NS, "polygon")
     polygon.setAttribute("points", pointsAttr)
     polygon.setAttribute("class", panel.id === this.selectedPanelId ? "panel-outline panel-outline--selected" : "panel-outline")
@@ -122,6 +141,30 @@ export default class extends Controller {
     polygon.dataset.panelId = panel.id
     polygon.addEventListener("pointerdown", (event) => this.handlePanelPointerDown(event, panel.id))
     this.canvasTarget.appendChild(polygon)
+  }
+
+  // Rebuilds one panel's ink strokes as <polyline> elements — used both for
+  // the initial render and for the eraser's live preview (see
+  // startErasing), where the number of surviving segments changes on every
+  // move as strokes get split/removed, so patching individual elements in
+  // place isn't an option the way a plain pen stroke's live redraw is.
+  renderInkGroup(panelId, strokes) {
+    const group = this.canvasTarget.querySelector(`.panel-ink[data-panel-id="${panelId}"]`)
+    if (!group) return
+
+    group.replaceChildren(...strokes.map((stroke) => this.buildInkPolyline(stroke)))
+  }
+
+  buildInkPolyline(stroke) {
+    const polyline = document.createElementNS(SVG_NS, "polyline")
+    polyline.setAttribute("points", pointsToAttr(stroke.pts))
+    polyline.setAttribute("fill", "none")
+    polyline.setAttribute("stroke", stroke.color)
+    polyline.setAttribute("stroke-width", stroke.w)
+    polyline.setAttribute("stroke-opacity", stroke.op)
+    polyline.setAttribute("stroke-linecap", "round")
+    polyline.setAttribute("stroke-linejoin", "round")
+    return polyline
   }
 
   // Draw mode's zoomed-in focus view: a dark overlay covering the whole
@@ -367,15 +410,22 @@ export default class extends Controller {
     this.renderAll(this.currentPanels)
   }
 
-  // Layout mode taps a panel to select/drag it; Draw mode taps a panel to
-  // zoom into it instead (see focusPanel) — Letter mode doesn't act on a
-  // panel tap at all (text elements are their own future layer).
+  // Layout mode taps a panel to select/drag it; Draw mode's first tap on a
+  // panel zooms into it (see focusPanel), and — since focusPanel is then a
+  // no-op for the already-focused panel — a subsequent tap/drag on that
+  // same (now zoomed-in) panel draws or erases instead. Letter mode
+  // doesn't act on a panel tap at all (text elements are their own future
+  // layer).
   handlePanelPointerDown(event, panelId) {
     event.stopPropagation()
     event.preventDefault()
 
     if (this.currentMode === "draw") {
-      this.focusPanel(panelId)
+      if (this.focusedPanelId === panelId) {
+        this.startInkGesture(event, panelId)
+      } else {
+        this.focusPanel(panelId)
+      }
       return
     }
     if (this.currentMode !== "layout") return
@@ -389,9 +439,124 @@ export default class extends Controller {
     this.select(panelId)
 
     const startPoint = this.svgPoint(event)
-    this.beginDrag(panelId, (originalPts, current) =>
-      translatePoints(originalPts, current.x - startPoint.x, current.y - startPoint.y)
+    // Ink (and, later, photo) moves with the panel — see the doc: "drag to
+    // move (strokes and photo move with it)" — so the same translation
+    // applied to the panel's pts is applied to every stroke's pts too.
+    this.beginDrag(
+      panelId,
+      (originalPts, current) => translatePoints(originalPts, current.x - startPoint.x, current.y - startPoint.y),
+      (originalStrokes, current) => originalStrokes.map((stroke) => ({
+        ...stroke,
+        pts: translatePoints(stroke.pts, current.x - startPoint.x, current.y - startPoint.y)
+      }))
     )
+  }
+
+  // Draw mode's actual drawing gesture, captured once a panel is already
+  // zoomed into — Pen/Marker append a new stroke; Eraser instead
+  // splits/removes segments of existing strokes it passes over (see
+  // startErasing / kapow/ink.js#eraseStrokes).
+  startInkGesture(event, panelId) {
+    if (this.currentDrawTool === "eraser") {
+      this.startErasing(event, panelId)
+    } else {
+      this.startStroke(event, panelId)
+    }
+  }
+
+  startStroke(event, panelId) {
+    const store = this.documentStoreController.store
+    const tool = this.currentDrawTool
+    const color = this.currentDrawColor
+    const size = this.currentDrawSize
+
+    const startPoint = this.svgPoint(event)
+    const pts = [ [ startPoint.x, startPoint.y ] ]
+    const pressures = [ pressureOrDefault(event.pressure) ]
+
+    const group = this.canvasTarget.querySelector(`.panel-ink[data-panel-id="${panelId}"]`)
+    const polyline = this.buildInkPolyline({ color, w: strokeWidth(size, tool), op: INK_TOOLS[tool]?.opacity ?? 1, pts })
+    group?.appendChild(polyline)
+
+    const onMove = (moveEvent) => {
+      const point = this.svgPoint(moveEvent)
+      pts.push([ point.x, point.y ])
+      pressures.push(pressureOrDefault(moveEvent.pressure))
+      polyline.setAttribute("points", pointsToAttr(pts))
+    }
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+
+      // A tap with no drag never became a real line — drop the preview
+      // rather than persisting a zero-length stroke.
+      if (pts.length < 2) {
+        polyline.remove()
+        return
+      }
+
+      const avgPressure = pressures.reduce((sum, p) => sum + p, 0) / pressures.length
+      const stroke = { tool, color, w: strokeWidth(size, tool, avgPressure), op: INK_TOOLS[tool]?.opacity ?? 1, pts }
+
+      store.mutate((state) => {
+        const panel = state.panels.find((p) => p.id === panelId)
+        if (panel) panel.strokes.push(stroke)
+      })
+    }
+
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }
+
+  startErasing(event, panelId) {
+    const store = this.documentStoreController.store
+    const panel = store.getState().panels.find((p) => p.id === panelId)
+    if (!panel) return
+
+    const originalStrokes = panel.strokes.map((stroke) => ({ ...stroke, pts: stroke.pts.map(([ x, y ]) => [ x, y ]) }))
+    const radius = (INK_SIZES[this.currentDrawSize] ?? INK_SIZES.m) * ERASER_RADIUS_MULTIPLIER
+    const eraserPts = []
+    let currentStrokes = originalStrokes
+
+    const applyErase = (point) => {
+      eraserPts.push([ point.x, point.y ])
+      currentStrokes = eraseStrokes(originalStrokes, eraserPts, radius)
+      this.renderInkGroup(panelId, currentStrokes)
+    }
+
+    applyErase(this.svgPoint(event))
+    const onMove = (moveEvent) => applyErase(this.svgPoint(moveEvent))
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+
+      store.mutate((state) => {
+        const target = state.panels.find((p) => p.id === panelId)
+        if (target) target.strokes = currentStrokes
+      })
+    }
+
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }
+
+  // Draw tray's tool/color/size buttons live in editor_controller.js (they
+  // apply to whichever panel is drawn on next, not to any one page), so —
+  // like currentMode — these read the current value straight off the
+  // editor element's own data attributes rather than needing their own
+  // event wiring.
+  get currentDrawTool() {
+    return this.editorElement?.dataset.editorDrawToolValue || "pen"
+  }
+
+  get currentDrawColor() {
+    return this.editorElement?.dataset.editorDrawColorValue || INK_COLORS[0]
+  }
+
+  get currentDrawSize() {
+    return this.editorElement?.dataset.editorDrawSizeValue || "m"
   }
 
   focusPanel(panelId) {
@@ -521,7 +686,24 @@ export default class extends Controller {
     event.stopPropagation()
     event.preventDefault()
 
-    this.beginDrag(panelId, (originalPts, current) => scaleFromCornerDrag(originalPts, corner, current.x, current.y))
+    // Corner handles "proportionally scale ink" (per the doc) alongside
+    // the panel itself — the same anchor/scale factors the panel's own
+    // pts use (see cornerScaleFactors) are applied to every stroke's pts,
+    // and to each stroke's width, so ink drawn near an edge shrinks/grows
+    // with the panel rather than staying a fixed page-unit thickness.
+    this.beginDrag(
+      panelId,
+      (originalPts, current) => scaleFromCornerDrag(originalPts, corner, current.x, current.y),
+      (originalStrokes, current, originalPts) => {
+        const { anchorX, anchorY, scaleX, scaleY } = cornerScaleFactors(originalPts, corner, current.x, current.y)
+        const widthScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2
+        return originalStrokes.map((stroke) => ({
+          ...stroke,
+          pts: scalePointsFromAnchor(stroke.pts, anchorX, anchorY, scaleX, scaleY),
+          w: Math.max(stroke.w * widthScale, 0.5)
+        }))
+      }
+    )
   }
 
   startVertexDrag(event, panelId, index) {
@@ -534,18 +716,25 @@ export default class extends Controller {
   // Shared drag machinery for move/scale/vertex-drag: tracks pointermove
   // against the panel's original (pre-drag) points, updates the DOM live,
   // and commits the final result through the document store on release.
-  beginDrag(panelId, computeNewPts) {
+  // `computeNewStrokes` defaults to leaving strokes untouched (vertex/shape
+  // editing reshapes only the panel's own border — the doc doesn't call
+  // for ink to follow a non-uniform per-vertex edit the way it does a
+  // plain move or corner-scale).
+  beginDrag(panelId, computeNewPts, computeNewStrokes = (strokes) => strokes) {
     const store = this.documentStoreController.store
     const panel = store.getState().panels.find((p) => p.id === panelId)
     if (!panel) return
 
     const originalPts = panel.pts.map(([ x, y ]) => [ x, y ])
+    const originalStrokes = panel.strokes.map((stroke) => ({ ...stroke, pts: stroke.pts.map(([ x, y ]) => [ x, y ]) }))
     let lastPts = null
+    let lastStrokes = null
 
     const onMove = (moveEvent) => {
       const current = this.svgPoint(moveEvent)
       lastPts = computeNewPts(originalPts, current)
-      this.updatePanelDom(panelId, lastPts)
+      lastStrokes = computeNewStrokes(originalStrokes, current, originalPts)
+      this.updatePanelDom(panelId, lastPts, lastStrokes)
     }
 
     const onUp = () => {
@@ -555,7 +744,9 @@ export default class extends Controller {
       if (lastPts) {
         store.mutate((state) => {
           const target = state.panels.find((p) => p.id === panelId)
-          if (target) target.pts = lastPts
+          if (!target) return
+          target.pts = lastPts
+          if (lastStrokes) target.strokes = lastStrokes
         })
       }
     }
@@ -566,7 +757,7 @@ export default class extends Controller {
 
   // Updates the live DOM during a drag without a full clear/rebuild, so
   // the dragged element itself is never torn down mid-gesture.
-  updatePanelDom(panelId, pts) {
+  updatePanelDom(panelId, pts, strokes = null) {
     const pointsAttr = pointsToAttr(pts)
 
     const polygon = this.canvasTarget.querySelector(`polygon.panel-outline[data-panel-id="${panelId}"]`)
@@ -574,6 +765,8 @@ export default class extends Controller {
 
     const clipPolygon = this.canvasTarget.querySelector(`#${clipPathId(panelId)} polygon`)
     if (clipPolygon) clipPolygon.setAttribute("points", pointsAttr)
+
+    if (strokes) this.updateInkDom(panelId, strokes)
 
     if (this.selectedPanelId === panelId) {
       if (this.shapeMode) {
@@ -583,6 +776,24 @@ export default class extends Controller {
       }
       if (this._floatingBar) this.positionFloatingBar(this._floatingBar, pts)
     }
+  }
+
+  // Patches each ink polyline's own points/width in place, matched to
+  // `strokes` by index — cheaper than renderInkGroup's full rebuild, and
+  // safe here since a move/scale drag only transforms existing strokes in
+  // place, never changes how many there are (contrast the eraser, which
+  // does change the segment count and uses renderInkGroup instead).
+  updateInkDom(panelId, strokes) {
+    const group = this.canvasTarget.querySelector(`.panel-ink[data-panel-id="${panelId}"]`)
+    if (!group) return
+
+    const polylines = group.children
+    strokes.forEach((stroke, index) => {
+      const polyline = polylines[index]
+      if (!polyline) return
+      polyline.setAttribute("points", pointsToAttr(stroke.pts))
+      polyline.setAttribute("stroke-width", stroke.w)
+    })
   }
 
   updateCornerHandlePositions(pts) {

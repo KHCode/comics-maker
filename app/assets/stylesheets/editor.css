@@ -221,6 +221,33 @@
   fill: var(--color-ink);
 }
 
+.panel-ink {
+  /* The panel's outline polygon (rendered after this group, so it's on
+     top — see panel_controller.js#renderPanel) is what actually starts a
+     draw/erase gesture; ink itself never needs to intercept a pointer. */
+  pointer-events: none;
+}
+
+.ink-tool--active,
+.ink-size--active {
+  background: var(--color-accent);
+  color: var(--color-ink);
+}
+
+.ink-color {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: var(--border-width) solid var(--color-ink);
+  box-shadow: none;
+}
+
+.ink-color--active {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .panel-focus-dim {
   /* Draw mode's zoomed-in focus view — dims everything in the (already
      cropped-in, see panel_controller.js#updateFocusViewBox) visible area

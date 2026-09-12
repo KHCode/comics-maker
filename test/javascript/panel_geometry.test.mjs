@@ -8,6 +8,7 @@ import {
   scalePointsFromAnchor,
   cornerPoint,
   scaleFromCornerDrag,
+  cornerScaleFactors,
   updateVertex,
   insertMidpointVertex,
   removeVertex
@@ -109,6 +110,20 @@ test("scaleFromCornerDrag refuses to flip the panel inside-out past the anchor",
   const box = boundingBox(scaled)
   assert.ok(box.minX < box.maxX)
   assert.ok(box.minY < box.maxY)
+})
+
+test("cornerScaleFactors returns the same anchor/scale that scaleFromCornerDrag applies", () => {
+  const factors = cornerScaleFactors(BOX, "se", 500, 500)
+  assert.deepEqual(factors, { anchorX: 100, anchorY: 100, scaleX: 2, scaleY: 2 })
+
+  const scaled = scalePointsFromAnchor(BOX, factors.anchorX, factors.anchorY, factors.scaleX, factors.scaleY)
+  assert.deepEqual(scaled, scaleFromCornerDrag(BOX, "se", 500, 500))
+})
+
+test("cornerScaleFactors clamps scale factors the same way scaleFromCornerDrag does", () => {
+  const factors = cornerScaleFactors(BOX, "se", 105, 105, 20)
+  assert.ok(factors.scaleX > 0)
+  assert.ok(factors.scaleY > 0)
 })
 
 test("updateVertex replaces only the point at the given index", () => {
