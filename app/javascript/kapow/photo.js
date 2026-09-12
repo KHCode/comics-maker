@@ -8,13 +8,19 @@
 // route needs both to resolve an actual URL (see photoUrl below), and
 // "resolved to a URL at render time" (the doc's own phrasing for `src`)
 // isn't otherwise possible client-side with no server round-trip per
-// render. bright/contrast/hue/sat/look (the Adjust tab) are a later PR;
-// omitted here rather than stored with unused placeholder values.
+// render. bright/contrast/hue/sat/look (the Adjust tab, see photoFilterCss
+// below) are non-destructive: stored as plain numbers/an enum alongside
+// the rest of the schema and only ever expressed as a CSS `filter` at
+// render time, never baked into the image's own pixels.
 
 export const MIN_SCALE_PCT = 20
 export const MAX_SCALE_PCT = 300
 export const MIN_ROTATE_DEG = -45
 export const MAX_ROTATE_DEG = 45
+export const MIN_ADJUST = -100
+export const MAX_ADJUST = 100
+export const MIN_HUE_DEG = -180
+export const MAX_HUE_DEG = 180
 
 export function clampScalePct(pct) {
   return Math.min(MAX_SCALE_PCT, Math.max(MIN_SCALE_PCT, pct))
@@ -24,11 +30,63 @@ export function clampRotateDeg(deg) {
   return Math.min(MAX_ROTATE_DEG, Math.max(MIN_ROTATE_DEG, deg))
 }
 
+// Shared by the Adjust tab's Bright/Contrast/Saturation sliders — all
+// three are expressed the same way (a -100..100 offset from "unchanged"
+// that photoFilterCss below maps onto brightness()/contrast()/saturate()'s
+// own 1.0-centered multiplier).
+export function clampAdjust(val) {
+  return Math.min(MAX_ADJUST, Math.max(MIN_ADJUST, val))
+}
+
+export function clampHueDeg(deg) {
+  return Math.min(MAX_HUE_DEG, Math.max(MIN_HUE_DEG, deg))
+}
+
+// One-tap "looks": each is a fixed set of extra CSS filter functions
+// layered underneath the user's own Bright/Contrast/Hue/Saturation sliders
+// (see photoFilterCss) — so picking a look gives a starting tone the
+// sliders can still nudge further, rather than the look and the sliders
+// fighting over the same values.
+export const LOOKS = [ "none", "ink_bw", "pop", "vintage" ]
+
+const LOOK_FILTERS = {
+  none: [],
+  ink_bw: [ "grayscale(1)", "contrast(1.2)" ],
+  pop: [ "saturate(1.6)", "contrast(1.1)" ],
+  vintage: [ "sepia(0.45)", "saturate(0.8)", "contrast(0.9)" ]
+}
+
 // A freshly inserted photo: centered (x/y are an offset from the panel's
 // own bounding-box center, in page units — see photoRenderBox), at 100%
-// of its "contain" fit, unrotated, unflipped, not filling the panel.
+// of its "contain" fit, unrotated, unflipped, not filling the panel, and
+// with the Adjust tab untouched (no look, all sliders at their neutral
+// midpoint).
 export function defaultPhoto(src, filename, nw, nh) {
-  return { src, filename, nw, nh, x: 0, y: 0, pct: 100, rot: 0, flip: false, cover: false }
+  return {
+    src, filename, nw, nh, x: 0, y: 0, pct: 100, rot: 0, flip: false, cover: false,
+    bright: 0, contrast: 0, hue: 0, sat: 0, look: "none"
+  }
+}
+
+// The CSS `filter` value for a photo's current Adjust-tab settings: the
+// current look's own fixed filters (if any) followed by the four sliders
+// as their own filter functions. `?? 0`/`?? "none"` defaults make this
+// tolerant of photos saved before this field set existed (or any photo
+// object missing them) rather than rendering `NaN` into the filter string.
+export function photoFilterCss(photo) {
+  const bright = photo.bright ?? 0
+  const contrast = photo.contrast ?? 0
+  const sat = photo.sat ?? 0
+  const hue = photo.hue ?? 0
+  const lookFilters = LOOK_FILTERS[photo.look] ?? []
+
+  return [
+    ...lookFilters,
+    `brightness(${1 + bright / 100})`,
+    `contrast(${1 + contrast / 100})`,
+    `saturate(${1 + sat / 100})`,
+    `hue-rotate(${hue}deg)`
+  ].join(" ")
 }
 
 // The Active Storage blob-redirect URL for a photo — needs both the

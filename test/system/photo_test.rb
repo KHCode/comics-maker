@@ -312,6 +312,59 @@ class PhotoTest < ApplicationSystemTestCase
     assert photo["pct"] < 100, "expected dragging the e handle inward to shrink pct (got #{photo['pct']})"
   end
 
+  test "Adjust tab sliders update the stored photo and the rendered image's CSS filter" do
+    user = User.create!(name: "Photog", email: "photo10@kapow.test", password: "password123")
+    project = create_project_with_panel(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_draw_mode
+    focus_panel
+    switch_to_photo_layer
+    insert_sample_photo
+
+    within(".draw-layer-panel[data-layer='photo']") { click_button "Adjust" }
+
+    find("input[data-editor-target='photoBright']").set(20)
+    find("input[data-editor-target='photoContrast']").set(-30)
+    find("input[data-editor-target='photoHue']").set(90)
+    find("input[data-editor-target='photoSat']").set(50)
+
+    photo = stored_panel["photo"]
+    assert_equal 20, photo["bright"]
+    assert_equal(-30, photo["contrast"])
+    assert_equal 90, photo["hue"]
+    assert_equal 50, photo["sat"]
+
+    image = find(".panel-photo[data-panel-id='p1'] image", visible: :all)
+    filter = image["style"]
+    assert_includes filter, "brightness(1.2)"
+    assert_includes filter, "contrast(0.7)"
+    assert_includes filter, "saturate(1.5)"
+    assert_includes filter, "hue-rotate(90deg)"
+  end
+
+  test "picking a one-tap look stores it and layers its filter ahead of the sliders" do
+    user = User.create!(name: "Photog", email: "photo12@kapow.test", password: "password123")
+    project = create_project_with_panel(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_draw_mode
+    focus_panel
+    switch_to_photo_layer
+    insert_sample_photo
+
+    within(".draw-layer-panel[data-layer='photo']") { click_button "Adjust" }
+    click_button "Ink B&W"
+
+    assert_equal "ink_bw", stored_panel["photo"]["look"]
+    assert_selector "button[data-editor-target='photoLook'][data-look='ink_bw'].ink-tool--active"
+
+    image = find(".panel-photo[data-panel-id='p1'] image", visible: :all)
+    assert_includes image["style"], "grayscale(1)"
+  end
+
   test "moving the panel in Layout mode carries the photo along (its pan offset is unchanged)" do
     user = User.create!(name: "Photog", email: "photo6@kapow.test", password: "password123")
     project = create_project_with_panel(user)

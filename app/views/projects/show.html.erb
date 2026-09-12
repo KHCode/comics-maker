@@ -112,16 +112,48 @@
           <input type="file" id="photo-camera-input" accept="image/*" capture="environment" hidden data-editor-target="cameraFileInput" data-action="change->editor#uploadPhoto">
         </div>
         <div data-editor-target="photoFit" hidden>
-          <div class="tray-section">
-            <span class="tray-label">Scale</span>
-            <input type="range" min="20" max="300" value="100" data-editor-target="photoScale" data-action="input->editor#updatePhotoScale">
-            <span class="tray-label">Rotate</span>
-            <input type="range" min="-45" max="45" value="0" data-editor-target="photoRotate" data-action="input->editor#updatePhotoRotate">
+          <nav class="draw-layer-tabs">
+            <button type="button" class="draw-layer-tab draw-layer-tab--active" data-editor-target="photoSubTab" data-subtab="fit" data-action="click->editor#selectPhotoSubTab">Fit</button>
+            <button type="button" class="draw-layer-tab" data-editor-target="photoSubTab" data-subtab="adjust" data-action="click->editor#selectPhotoSubTab">Adjust</button>
+          </nav>
+
+          <div data-editor-target="photoSubPanel" data-subtab="fit">
+            <div class="tray-section">
+              <span class="tray-label">Scale</span>
+              <input type="range" min="20" max="300" value="100" data-editor-target="photoScale" data-action="input->editor#updatePhotoScale">
+              <span class="tray-label">Rotate</span>
+              <input type="range" min="-45" max="45" value="0" data-editor-target="photoRotate" data-action="input->editor#updatePhotoRotate">
+            </div>
+            <div class="tray-section">
+              <span class="tray-hint">Drag the photo to reposition it.</span>
+              <button type="button" class="ink-tool" data-editor-target="photoFlip" data-action="click->editor#flipPhoto">Flip</button>
+              <button type="button" class="ink-tool" data-editor-target="photoCover" data-action="click->editor#togglePhotoCover">Fill panel</button>
+            </div>
           </div>
+
+          <div data-editor-target="photoSubPanel" data-subtab="adjust" hidden>
+            <div class="tray-section">
+              <span class="tray-label">Bright</span>
+              <input type="range" min="-100" max="100" value="0" data-editor-target="photoBright" data-action="input->editor#updatePhotoBright">
+              <span class="tray-label">Contrast</span>
+              <input type="range" min="-100" max="100" value="0" data-editor-target="photoContrast" data-action="input->editor#updatePhotoContrast">
+            </div>
+            <div class="tray-section">
+              <span class="tray-label">Hue</span>
+              <input type="range" min="-180" max="180" value="0" data-editor-target="photoHue" data-action="input->editor#updatePhotoHue">
+              <span class="tray-label">Saturation</span>
+              <input type="range" min="-100" max="100" value="0" data-editor-target="photoSat" data-action="input->editor#updatePhotoSat">
+            </div>
+            <div class="tray-section">
+              <span class="tray-label">Look</span>
+              <button type="button" class="ink-tool" data-editor-target="photoLook" data-look="none" data-action="click->editor#selectPhotoLook">None</button>
+              <button type="button" class="ink-tool" data-editor-target="photoLook" data-look="ink_bw" data-action="click->editor#selectPhotoLook">Ink B&amp;W</button>
+              <button type="button" class="ink-tool" data-editor-target="photoLook" data-look="pop" data-action="click->editor#selectPhotoLook">Pop</button>
+              <button type="button" class="ink-tool" data-editor-target="photoLook" data-look="vintage" data-action="click->editor#selectPhotoLook">Vintage</button>
+            </div>
+          </div>
+
           <div class="tray-section">
-            <span class="tray-hint">Drag the photo to reposition it.</span>
-            <button type="button" class="ink-tool" data-editor-target="photoFlip" data-action="click->editor#flipPhoto">Flip</button>
-            <button type="button" class="ink-tool" data-editor-target="photoCover" data-action="click->editor#togglePhotoCover">Fill panel</button>
             <button type="button" data-action="click->editor#removePhoto">Remove</button>
           </div>
         </div>

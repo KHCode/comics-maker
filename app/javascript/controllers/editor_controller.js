@@ -25,7 +25,9 @@ export default class extends Controller {
     "drawTool", "drawColor", "drawSize",
     "drawLayerTab", "drawLayerPanel",
     "photoFileInput", "cameraFileInput", "photoInsert", "photoFit",
-    "photoScale", "photoRotate", "photoFlip", "photoCover"
+    "photoScale", "photoRotate", "photoFlip", "photoCover",
+    "photoSubTab", "photoSubPanel",
+    "photoBright", "photoContrast", "photoHue", "photoSat", "photoLook"
   ]
   static values = {
     format: String,
@@ -34,7 +36,8 @@ export default class extends Controller {
     drawTool: { type: String, default: "pen" },
     drawColor: { type: String, default: INK_COLORS[0] },
     drawSize: { type: String, default: "m" },
-    drawLayer: { type: String, default: "ink" }
+    drawLayer: { type: String, default: "ink" },
+    photoSubTab: { type: String, default: "fit" }
   }
 
   connect() {
@@ -44,6 +47,7 @@ export default class extends Controller {
     this.updateDrawColorUI()
     this.updateDrawSizeUI()
     this.updateDrawLayerUI()
+    this.updatePhotoSubTabUI()
     this.syncPhotoControls()
   }
 
@@ -165,11 +169,48 @@ export default class extends Controller {
     this.focusedPanelController?.removePhoto()
   }
 
-  // Keeps the Fit tab's sliders/toggles reflecting whichever panel is
-  // actually focused (rather than whatever the last-focused panel's photo
-  // happened to be set to) — called whenever focus changes and after any
-  // document mutation, since panning/inserting/removing a photo all need
-  // the same resync.
+  // Fit/Adjust sub-tabs within the Photo layer — which of the two control
+  // panels shows underneath the Insert/Fit-or-Adjust split, same
+  // tab/panel-toggle pattern as selectDrawLayer/updateDrawLayerUI above.
+  selectPhotoSubTab(event) {
+    this.photoSubTabValue = event.currentTarget.dataset.subtab
+    this.updatePhotoSubTabUI()
+  }
+
+  updatePhotoSubTabUI() {
+    this.photoSubTabTargets.forEach((tab) => {
+      tab.classList.toggle("draw-layer-tab--active", tab.dataset.subtab === this.photoSubTabValue)
+    })
+    this.photoSubPanelTargets.forEach((panel) => {
+      panel.hidden = panel.dataset.subtab !== this.photoSubTabValue
+    })
+  }
+
+  updatePhotoBright(event) {
+    this.focusedPanelController?.setPhotoBright(Number(event.target.value))
+  }
+
+  updatePhotoContrast(event) {
+    this.focusedPanelController?.setPhotoContrast(Number(event.target.value))
+  }
+
+  updatePhotoHue(event) {
+    this.focusedPanelController?.setPhotoHue(Number(event.target.value))
+  }
+
+  updatePhotoSat(event) {
+    this.focusedPanelController?.setPhotoSat(Number(event.target.value))
+  }
+
+  selectPhotoLook(event) {
+    this.focusedPanelController?.setPhotoLook(event.currentTarget.dataset.look)
+  }
+
+  // Keeps the Fit/Adjust tabs' sliders/toggles reflecting whichever panel
+  // is actually focused (rather than whatever the last-focused panel's
+  // photo happened to be set to) — called whenever focus changes and after
+  // any document mutation, since panning/inserting/removing/adjusting a
+  // photo all need the same resync.
   syncPhotoControls() {
     const photo = this.focusedPanelController?.focusedPanelPhoto ?? null
 
@@ -179,6 +220,13 @@ export default class extends Controller {
     if (this.hasPhotoRotateTarget) this.photoRotateTarget.value = photo?.rot ?? 0
     if (this.hasPhotoFlipTarget) this.photoFlipTarget.classList.toggle("ink-tool--active", !!photo?.flip)
     if (this.hasPhotoCoverTarget) this.photoCoverTarget.classList.toggle("ink-tool--active", !!photo?.cover)
+    if (this.hasPhotoBrightTarget) this.photoBrightTarget.value = photo?.bright ?? 0
+    if (this.hasPhotoContrastTarget) this.photoContrastTarget.value = photo?.contrast ?? 0
+    if (this.hasPhotoHueTarget) this.photoHueTarget.value = photo?.hue ?? 0
+    if (this.hasPhotoSatTarget) this.photoSatTarget.value = photo?.sat ?? 0
+    this.photoLookTargets.forEach((button) => {
+      button.classList.toggle("ink-tool--active", button.dataset.look === (photo?.look ?? "none"))
+    })
   }
 
   get focusedPanelController() {

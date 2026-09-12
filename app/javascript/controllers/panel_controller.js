@@ -16,8 +16,11 @@ import {
   defaultPhoto,
   photoUrl,
   photoRenderBox,
+  photoFilterCss,
   clampScalePct,
   clampRotateDeg,
+  clampAdjust,
+  clampHueDeg,
   handleLocalPositions,
   toLocalPoint,
   toWorldPoint,
@@ -254,6 +257,7 @@ export default class extends Controller {
     image.setAttribute("width", render.width)
     image.setAttribute("height", render.height)
     image.setAttribute("preserveAspectRatio", "none")
+    image.style.filter = photoFilterCss(panel.photo)
 
     inner.appendChild(image)
     group.appendChild(inner)
@@ -828,6 +832,30 @@ export default class extends Controller {
 
   togglePhotoCover() {
     this.updateFocusedPhoto((photo) => ({ ...photo, cover: !photo.cover }))
+  }
+
+  // Adjust tab: brightness/contrast/hue/saturation sliders and the
+  // one-tap look buttons — all non-destructive (see kapow/photo.js's
+  // photoFilterCss), so these just update the stored numbers/enum and
+  // let renderPhotoGroup re-derive the CSS filter from them.
+  setPhotoBright(val) {
+    this.updateFocusedPhoto((photo) => ({ ...photo, bright: clampAdjust(val) }))
+  }
+
+  setPhotoContrast(val) {
+    this.updateFocusedPhoto((photo) => ({ ...photo, contrast: clampAdjust(val) }))
+  }
+
+  setPhotoHue(deg) {
+    this.updateFocusedPhoto((photo) => ({ ...photo, hue: clampHueDeg(deg) }))
+  }
+
+  setPhotoSat(val) {
+    this.updateFocusedPhoto((photo) => ({ ...photo, sat: clampAdjust(val) }))
+  }
+
+  setPhotoLook(look) {
+    this.updateFocusedPhoto((photo) => ({ ...photo, look }))
   }
 
   removePhoto() {

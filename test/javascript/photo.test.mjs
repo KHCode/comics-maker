@@ -7,23 +7,31 @@ import {
   MAX_SCALE_PCT,
   MIN_ROTATE_DEG,
   MAX_ROTATE_DEG,
+  MIN_ADJUST,
+  MAX_ADJUST,
+  MIN_HUE_DEG,
+  MAX_HUE_DEG,
   clampScalePct,
   clampRotateDeg,
+  clampAdjust,
+  clampHueDeg,
   defaultPhoto,
   photoUrl,
   baseScale,
   photoRenderBox,
+  photoFilterCss,
   handleLocalPositions,
   toLocalPoint,
   toWorldPoint,
   scalePctFromHandleDrag
 } from "../../app/javascript/kapow/photo.js"
 
-test("defaultPhoto centers, un-rotated/flipped, at 100% and not filling", () => {
+test("defaultPhoto centers, un-rotated/flipped, at 100% and not filling, with Adjust untouched", () => {
   const photo = defaultPhoto("abc123", "cat.png", 400, 300)
   assert.deepEqual(photo, {
     src: "abc123", filename: "cat.png", nw: 400, nh: 300,
-    x: 0, y: 0, pct: 100, rot: 0, flip: false, cover: false
+    x: 0, y: 0, pct: 100, rot: 0, flip: false, cover: false,
+    bright: 0, contrast: 0, hue: 0, sat: 0, look: "none"
   })
 })
 
@@ -42,6 +50,50 @@ test("clampRotateDeg clamps to the +/-45 degree range", () => {
   assert.equal(clampRotateDeg(-90), MIN_ROTATE_DEG)
   assert.equal(clampRotateDeg(90), MAX_ROTATE_DEG)
   assert.equal(clampRotateDeg(10), 10)
+})
+
+test("clampAdjust clamps to the -100..100 range", () => {
+  assert.equal(clampAdjust(-500), MIN_ADJUST)
+  assert.equal(clampAdjust(500), MAX_ADJUST)
+  assert.equal(clampAdjust(42), 42)
+})
+
+test("clampHueDeg clamps to the +/-180 degree range", () => {
+  assert.equal(clampHueDeg(-270), MIN_HUE_DEG)
+  assert.equal(clampHueDeg(270), MAX_HUE_DEG)
+  assert.equal(clampHueDeg(90), 90)
+})
+
+test("photoFilterCss expresses neutral Adjust settings as neutral filter functions", () => {
+  const photo = defaultPhoto("id", "f.png", 400, 200)
+  assert.equal(
+    photoFilterCss(photo),
+    "brightness(1) contrast(1) saturate(1) hue-rotate(0deg)"
+  )
+})
+
+test("photoFilterCss maps sliders onto their filter functions", () => {
+  const photo = { ...defaultPhoto("id", "f.png", 400, 200), bright: 20, contrast: -30, sat: 50, hue: 90 }
+  assert.equal(
+    photoFilterCss(photo),
+    "brightness(1.2) contrast(0.7) saturate(1.5) hue-rotate(90deg)"
+  )
+})
+
+test("photoFilterCss layers a look's own fixed filters ahead of the sliders", () => {
+  const photo = { ...defaultPhoto("id", "f.png", 400, 200), look: "ink_bw" }
+  assert.equal(
+    photoFilterCss(photo),
+    "grayscale(1) contrast(1.2) brightness(1) contrast(1) saturate(1) hue-rotate(0deg)"
+  )
+})
+
+test("photoFilterCss defaults missing Adjust fields to neutral, for photos saved before this field set existed", () => {
+  const legacyPhoto = { src: "id", filename: "f.png", nw: 400, nh: 200, x: 0, y: 0, pct: 100, rot: 0, flip: false, cover: false }
+  assert.equal(
+    photoFilterCss(legacyPhoto),
+    "brightness(1) contrast(1) saturate(1) hue-rotate(0deg)"
+  )
 })
 
 test("baseScale contain-fits by default: the smaller of the two axis scales", () => {
