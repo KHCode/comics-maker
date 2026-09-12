@@ -39,10 +39,18 @@ export default class extends Controller {
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content
     if (csrfToken) headers["X-CSRF-Token"] = csrfToken
 
+    // Every panel currently referencing a photo (see panel.photo.src, a
+    // blob signed_id) is resent on every save — cheaper than tracking
+    // "just uploaded" as its own event, and the server only attaches
+    // whichever of these aren't already attached to the page (see
+    // PagesController#attach_new_photos), so resending ones already
+    // attached is a no-op.
+    const photoSignedIds = state.panels.map((panel) => panel.photo?.src).filter(Boolean)
+
     return fetch(`/projects/${this.projectIdValue}/pages/${this.pageIdValue}`, {
       method: "PATCH",
       headers,
-      body: JSON.stringify({ page: { panels: state.panels, texts: state.texts } })
+      body: JSON.stringify({ page: { panels: state.panels, texts: state.texts, photo_signed_ids: photoSignedIds } })
     }).then((response) => {
       if (!response.ok) throw new Error(`Save failed with status ${response.status}`)
       return response

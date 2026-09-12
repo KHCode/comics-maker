@@ -29,6 +29,8 @@ class PagesController < ApplicationController
       "texts" => page_params["texts"].is_a?(Array) ? page_params["texts"] : []
     })
 
+    attach_new_photos(page_params["photo_signed_ids"])
+
     head :no_content
   end
 
@@ -78,5 +80,23 @@ class PagesController < ApplicationController
 
     def set_page
       @page = @project.pages.find(params[:id])
+    end
+
+    # Panels reference an uploaded photo by its blob's signed_id (see the
+    # doc's panel.photo schema), not a foreign key — but the blob still
+    # needs a real owner so it's destroyed along with the page instead of
+    # orphaned forever (see Page#photos). Every save resends the full set
+    # of signed_ids currently referenced in `data`, so only ones not
+    # already attached actually get attached here.
+    def attach_new_photos(signed_ids)
+      return unless signed_ids.is_a?(Array)
+
+      blobs = signed_ids.filter_map { |signed_id| ActiveStorage::Blob.find_signed(signed_id) }
+      # page.photos (has_many_attached) yields Attachment records, not
+      # Blobs — comparing against their own #id would never match a
+      # blob's id, silently defeating this whole dedup check.
+      already_attached_blob_ids = @page.photos_attachments.pluck(:blob_id)
+      new_blobs = blobs.reject { |blob| already_attached_blob_ids.include?(blob.id) }
+      @page.photos.attach(new_blobs) if new_blobs.any?
     end
 end

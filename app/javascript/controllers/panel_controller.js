@@ -12,6 +12,8 @@ import {
   removeVertex
 } from "kapow/panel_geometry"
 import { INK_TOOLS, INK_SIZES, INK_COLORS, pressureOrDefault, strokeWidth, eraseStrokes } from "kapow/ink"
+import { defaultPhoto, photoUrl, photoRenderBox, clampScalePct, clampRotateDeg } from "kapow/photo"
+import { DirectUpload } from "@rails/activestorage"
 
 const SVG_NS = "http://www.w3.org/2000/svg"
 const HANDLE_SIZE = 24 // page units, not screen pixels
@@ -109,7 +111,7 @@ export default class extends Controller {
   }
 
   clear() {
-    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-background, :scope > .panel-handle, :scope > .panel-floating-bar, :scope > .panel-focus-dim, :scope > .panel-ink, :scope > defs").forEach((el) => el.remove())
+    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-background, :scope > .panel-handle, :scope > .panel-floating-bar, :scope > .panel-focus-dim, :scope > .panel-photo, :scope > .panel-ink, :scope > defs").forEach((el) => el.remove())
     this._defs = null
     this._floatingBar = null
   }
@@ -134,6 +136,17 @@ export default class extends Controller {
     background.setAttribute("class", "panel-background")
     background.dataset.panelId = panel.id
     this.canvasTarget.appendChild(background)
+
+    // Photo sits between the opaque background and the ink layer — under
+    // the background it'd never be visible; under the ink, drawing "on
+    // top of" an inserted photo (the doc's own framing for the two Draw
+    // layers) wouldn't be possible.
+    const photoGroup = document.createElementNS(SVG_NS, "g")
+    photoGroup.setAttribute("class", "panel-photo")
+    photoGroup.setAttribute("clip-path", `url(#${clipId})`)
+    photoGroup.dataset.panelId = panel.id
+    this.canvasTarget.appendChild(photoGroup)
+    this.renderPhotoGroup(panel.id, panel)
 
     // Ink is appended (and clipped to the panel's own shape) before the
     // outline polygon below, so the panel's border always renders crisp on
@@ -176,6 +189,39 @@ export default class extends Controller {
     polyline.setAttribute("stroke-linecap", "round")
     polyline.setAttribute("stroke-linejoin", "round")
     return polyline
+  }
+
+  // Rebuilds one panel's photo (if any) as a single clipped <image> — used
+  // for the initial render and for the pan gesture's live preview (see
+  // startPhotoPan), which re-renders with a locally-modified photo object
+  // on every move and only commits the final x/y through the document
+  // store on release.
+  renderPhotoGroup(panelId, panel) {
+    const group = this.canvasTarget.querySelector(`.panel-photo[data-panel-id="${panelId}"]`)
+    if (!group) return
+    group.replaceChildren()
+    if (!panel.photo) return
+
+    const box = boundingBox(panel.pts)
+    const boxCenter = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 }
+    const render = photoRenderBox(panel.photo, boxCenter, box.maxX - box.minX, box.maxY - box.minY)
+
+    const inner = document.createElementNS(SVG_NS, "g")
+    inner.setAttribute(
+      "transform",
+      `translate(${render.centerX} ${render.centerY}) rotate(${panel.photo.rot}) scale(${panel.photo.flip ? -1 : 1} 1)`
+    )
+
+    const image = document.createElementNS(SVG_NS, "image")
+    image.setAttribute("href", photoUrl(panel.photo))
+    image.setAttribute("x", -render.width / 2)
+    image.setAttribute("y", -render.height / 2)
+    image.setAttribute("width", render.width)
+    image.setAttribute("height", render.height)
+    image.setAttribute("preserveAspectRatio", "none")
+
+    inner.appendChild(image)
+    group.appendChild(inner)
   }
 
   // Draw mode's zoomed-in focus view: a dark overlay covering the whole
@@ -480,7 +526,11 @@ export default class extends Controller {
 
     if (this.currentMode === "draw") {
       if (this.focusedPanelId === panelId) {
-        this.startInkGesture(event, panelId)
+        if (this.currentDrawLayer === "photo") {
+          this.startPhotoPan(event, panelId)
+        } else {
+          this.startInkGesture(event, panelId)
+        }
       } else {
         this.focusPanel(panelId)
       }
@@ -615,6 +665,128 @@ export default class extends Controller {
 
   get currentDrawSize() {
     return this.editorElement?.dataset.editorDrawSizeValue || "m"
+  }
+
+  // "ink" or "photo" — which of Draw mode's two layers the tray is
+  // currently showing tools for (see editor_controller.js's drawLayer
+  // value/tabs), read the same way currentDrawTool/Color/Size are.
+  get currentDrawLayer() {
+    return this.editorElement?.dataset.editorDrawLayerValue || "ink"
+  }
+
+  get directUploadUrl() {
+    return this.editorElement?.dataset.editorDirectUploadUrlValue
+  }
+
+  // The focused panel's current photo, if any — editor_controller.js
+  // reads this to keep the Fit tab's sliders/toggles in sync with
+  // whichever panel is actually focused (see its syncPhotoControls).
+  get focusedPanelPhoto() {
+    return this.currentPanels.find((p) => p.id === this.focusedPanelId)?.photo ?? null
+  }
+
+  // Reads the file's own pixel dimensions client-side (nw/nh) before
+  // kicking off the direct upload — Active Storage's own async analysis
+  // job isn't needed for this, and waiting on it would mean the photo
+  // couldn't render at its correct aspect ratio until some later reload.
+  insertPhotoFile(file) {
+    if (!this.focusedPanelId || !file) return
+    const panelId = this.focusedPanelId
+
+    const objectUrl = URL.createObjectURL(file)
+    const image = new Image()
+    image.onload = () => {
+      const nw = image.naturalWidth
+      const nh = image.naturalHeight
+      URL.revokeObjectURL(objectUrl)
+      this.uploadPhotoFile(panelId, file, nw, nh)
+    }
+    image.src = objectUrl
+  }
+
+  uploadPhotoFile(panelId, file, nw, nh) {
+    const upload = new DirectUpload(file, this.directUploadUrl)
+    upload.create((error, blob) => {
+      if (error) {
+        console.error("Kapow: photo upload failed", error)
+        return
+      }
+
+      this.documentStoreController.store.mutate((state) => {
+        const panel = state.panels.find((p) => p.id === panelId)
+        if (panel) panel.photo = defaultPhoto(blob.signed_id, blob.filename, nw, nh)
+      })
+    })
+  }
+
+  setPhotoScale(pct) {
+    this.updateFocusedPhoto((photo) => ({ ...photo, pct: clampScalePct(pct) }))
+  }
+
+  setPhotoRotate(deg) {
+    this.updateFocusedPhoto((photo) => ({ ...photo, rot: clampRotateDeg(deg) }))
+  }
+
+  flipPhoto() {
+    this.updateFocusedPhoto((photo) => ({ ...photo, flip: !photo.flip }))
+  }
+
+  togglePhotoCover() {
+    this.updateFocusedPhoto((photo) => ({ ...photo, cover: !photo.cover }))
+  }
+
+  removePhoto() {
+    this.updateFocusedPhoto(() => null)
+  }
+
+  updateFocusedPhoto(computeNewPhoto) {
+    if (!this.focusedPanelId) return
+    const panelId = this.focusedPanelId
+
+    this.documentStoreController.store.mutate((state) => {
+      const panel = state.panels.find((p) => p.id === panelId)
+      if (panel?.photo) panel.photo = computeNewPhoto(panel.photo)
+    })
+  }
+
+  // Photo mode's pan gesture: dragging anywhere on the (already-focused)
+  // panel — same entry point as an ink stroke, just a different current
+  // layer — offsets the photo from the panel's own bounding-box center.
+  // Live-previews locally without touching the store, the same
+  // build-then-commit pattern ink/eraser use, so a full clear/rebuild of
+  // every panel isn't needed on every pointermove.
+  startPhotoPan(event, panelId) {
+    const panel = this.currentPanels.find((p) => p.id === panelId)
+    if (!panel?.photo) return
+
+    const startPoint = this.svgPoint(event)
+    const originalX = panel.photo.x
+    const originalY = panel.photo.y
+    let lastX = originalX
+    let lastY = originalY
+
+    const onMove = (moveEvent) => {
+      const current = this.svgPoint(moveEvent)
+      lastX = originalX + (current.x - startPoint.x)
+      lastY = originalY + (current.y - startPoint.y)
+      this.renderPhotoGroup(panelId, { ...panel, photo: { ...panel.photo, x: lastX, y: lastY } })
+    }
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+
+      this.documentStoreController.store.mutate((state) => {
+        const target = state.panels.find((p) => p.id === panelId)
+        if (target?.photo) {
+          target.photo.x = lastX
+          target.photo.y = lastY
+        }
+      })
+    }
+
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
   }
 
   focusPanel(panelId) {
@@ -760,6 +932,16 @@ export default class extends Controller {
           pts: scalePointsFromAnchor(stroke.pts, anchorX, anchorY, scaleX, scaleY),
           w: Math.max(stroke.w * widthScale, 0.5)
         }))
+      },
+      // A photo's own rendered size already tracks the panel's bounding
+      // box for free (see photoRenderBox's contain/cover fit), so only its
+      // pan offset needs to scale here — as a vector (a difference from
+      // the box center), not a point, it scales by scaleX/scaleY directly
+      // regardless of the anchor's own position.
+      (originalPhoto, current, originalPts) => {
+        if (!originalPhoto) return originalPhoto
+        const { scaleX, scaleY } = cornerScaleFactors(originalPts, corner, current.x, current.y)
+        return { ...originalPhoto, x: originalPhoto.x * scaleX, y: originalPhoto.y * scaleY }
       }
     )
   }
@@ -778,21 +960,28 @@ export default class extends Controller {
   // editing reshapes only the panel's own border — the doc doesn't call
   // for ink to follow a non-uniform per-vertex edit the way it does a
   // plain move or corner-scale).
-  beginDrag(panelId, computeNewPts, computeNewStrokes = (strokes) => strokes) {
+  // `computeNewPhoto` defaults to leaving the photo untouched — correct
+  // for both a plain move (its pan offset is relative to the box center,
+  // so it's already translation-invariant) and vertex/shape editing (which
+  // only reshapes the panel's own border, same reasoning as strokes above).
+  beginDrag(panelId, computeNewPts, computeNewStrokes = (strokes) => strokes, computeNewPhoto = (photo) => photo) {
     const store = this.documentStoreController.store
     const panel = store.getState().panels.find((p) => p.id === panelId)
     if (!panel) return
 
     const originalPts = panel.pts.map(([ x, y ]) => [ x, y ])
     const originalStrokes = panel.strokes.map((stroke) => ({ ...stroke, pts: stroke.pts.map(([ x, y ]) => [ x, y ]) }))
+    const originalPhoto = panel.photo ? { ...panel.photo } : null
     let lastPts = null
     let lastStrokes = null
+    let lastPhoto = originalPhoto
 
     const onMove = (moveEvent) => {
       const current = this.svgPoint(moveEvent)
       lastPts = computeNewPts(originalPts, current)
       lastStrokes = computeNewStrokes(originalStrokes, current, originalPts)
-      this.updatePanelDom(panelId, lastPts, lastStrokes)
+      lastPhoto = computeNewPhoto(originalPhoto, current, originalPts)
+      this.updatePanelDom(panelId, lastPts, lastStrokes, lastPhoto)
     }
 
     const onUp = () => {
@@ -805,6 +994,7 @@ export default class extends Controller {
           if (!target) return
           target.pts = lastPts
           if (lastStrokes) target.strokes = lastStrokes
+          if (target.photo) target.photo = lastPhoto
         })
       }
     }
@@ -815,7 +1005,7 @@ export default class extends Controller {
 
   // Updates the live DOM during a drag without a full clear/rebuild, so
   // the dragged element itself is never torn down mid-gesture.
-  updatePanelDom(panelId, pts, strokes = null) {
+  updatePanelDom(panelId, pts, strokes = null, photo = undefined) {
     const pointsAttr = pointsToAttr(pts)
 
     const polygon = this.canvasTarget.querySelector(`polygon.panel-outline[data-panel-id="${panelId}"]`)
@@ -826,6 +1016,8 @@ export default class extends Controller {
 
     const clipPolygon = this.canvasTarget.querySelector(`#${clipPathId(panelId)} polygon`)
     if (clipPolygon) clipPolygon.setAttribute("points", pointsAttr)
+
+    if (photo !== undefined) this.renderPhotoGroup(panelId, { pts, photo })
 
     if (strokes) this.updateInkDom(panelId, strokes)
 

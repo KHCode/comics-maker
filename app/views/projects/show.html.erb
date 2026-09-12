@@ -1,4 +1,4 @@
-<div class="editor" data-controller="editor" data-editor-format-value="<%= @project.format %>" data-editor-page-unit-height-value="<%= @project.page_unit_height %>" data-editor-mode-value="layout">
+<div class="editor" data-controller="editor" data-editor-format-value="<%= @project.format %>" data-editor-page-unit-height-value="<%= @project.page_unit_height %>" data-editor-mode-value="layout" data-editor-direct-upload-url-value="<%= rails_direct_uploads_path %>">
   <header class="editor-header">
     <%= render "shared/logo" %>
 
@@ -37,7 +37,7 @@
         <div class="page"
              data-controller="document-store panel"
              data-editor-target="page"
-             data-action="document-store:change->panel#refresh click->editor#selectPage panel:selected->editor#selectPage panel:focused->editor#updateFocusIndicator panel:unfocused->editor#updateFocusIndicator"
+             data-action="document-store:change->panel#refresh click->editor#selectPage panel:selected->editor#selectPage panel:focused->editor#updateFocusIndicator panel:unfocused->editor#updateFocusIndicator panel:focused->editor#syncPhotoControls panel:unfocused->editor#syncPhotoControls document-store:change->editor#syncPhotoControls"
              data-document-store-project-id-value="<%= @project.id %>"
              data-document-store-page-id-value="<%= page.id %>"
              data-document-store-initial-data-value="<%= page.data.to_json %>">
@@ -76,24 +76,57 @@
       </div>
     </div>
     <div class="contextual-tray" data-editor-target="tray" data-mode="draw" hidden>
-      <div class="tray-section">
-        <span class="tray-label">Tool</span>
-        <button type="button" class="ink-tool" data-editor-target="drawTool" data-tool="pen" data-action="click->editor#selectDrawTool">✎ Pen</button>
-        <button type="button" class="ink-tool" data-editor-target="drawTool" data-tool="marker" data-action="click->editor#selectDrawTool">🖊 Marker</button>
-        <button type="button" class="ink-tool" data-editor-target="drawTool" data-tool="eraser" data-action="click->editor#selectDrawTool">⌫ Eraser</button>
+      <nav class="draw-layer-tabs">
+        <button type="button" class="draw-layer-tab draw-layer-tab--active" data-editor-target="drawLayerTab" data-layer="ink" data-action="click->editor#selectDrawLayer">Ink</button>
+        <button type="button" class="draw-layer-tab" data-editor-target="drawLayerTab" data-layer="photo" data-action="click->editor#selectDrawLayer">Photo</button>
+      </nav>
+
+      <div class="draw-layer-panel" data-editor-target="drawLayerPanel" data-layer="ink">
+        <div class="tray-section">
+          <span class="tray-label">Tool</span>
+          <button type="button" class="ink-tool" data-editor-target="drawTool" data-tool="pen" data-action="click->editor#selectDrawTool">✎ Pen</button>
+          <button type="button" class="ink-tool" data-editor-target="drawTool" data-tool="marker" data-action="click->editor#selectDrawTool">🖊 Marker</button>
+          <button type="button" class="ink-tool" data-editor-target="drawTool" data-tool="eraser" data-action="click->editor#selectDrawTool">⌫ Eraser</button>
+        </div>
+        <div class="tray-section">
+          <span class="tray-label">Color</span>
+          <% EditorHelper::INK_COLORS.each do |hex| %>
+            <button type="button" class="ink-color" style="background-color: <%= hex %>;" data-editor-target="drawColor" data-color="<%= hex %>" data-action="click->editor#selectDrawColor" aria-label="Ink color <%= hex %>"></button>
+          <% end %>
+        </div>
+        <div class="tray-section">
+          <span class="tray-label">Size</span>
+          <button type="button" class="ink-size" data-editor-target="drawSize" data-size="s" data-action="click->editor#selectDrawSize">S</button>
+          <button type="button" class="ink-size" data-editor-target="drawSize" data-size="m" data-action="click->editor#selectDrawSize">M</button>
+          <button type="button" class="ink-size" data-editor-target="drawSize" data-size="l" data-action="click->editor#selectDrawSize">L</button>
+        </div>
       </div>
-      <div class="tray-section">
-        <span class="tray-label">Color</span>
-        <% EditorHelper::INK_COLORS.each do |hex| %>
-          <button type="button" class="ink-color" style="background-color: <%= hex %>;" data-editor-target="drawColor" data-color="<%= hex %>" data-action="click->editor#selectDrawColor" aria-label="Ink color <%= hex %>"></button>
-        <% end %>
+
+      <div class="draw-layer-panel" data-editor-target="drawLayerPanel" data-layer="photo" hidden>
+        <div class="tray-section" data-editor-target="photoInsert">
+          <span class="tray-label">Insert</span>
+          <button type="button" data-action="click->editor#choosePhoto">Photos</button>
+          <button type="button" data-action="click->editor#capturePhoto">Camera</button>
+          <span class="tray-hint">Zoom into a panel first, then insert a photo.</span>
+          <input type="file" id="photo-file-input" accept="image/*" hidden data-editor-target="photoFileInput" data-action="change->editor#uploadPhoto">
+          <input type="file" id="photo-camera-input" accept="image/*" capture="environment" hidden data-editor-target="cameraFileInput" data-action="change->editor#uploadPhoto">
+        </div>
+        <div data-editor-target="photoFit" hidden>
+          <div class="tray-section">
+            <span class="tray-label">Scale</span>
+            <input type="range" min="20" max="300" value="100" data-editor-target="photoScale" data-action="input->editor#updatePhotoScale">
+            <span class="tray-label">Rotate</span>
+            <input type="range" min="-45" max="45" value="0" data-editor-target="photoRotate" data-action="input->editor#updatePhotoRotate">
+          </div>
+          <div class="tray-section">
+            <span class="tray-hint">Drag the photo to reposition it.</span>
+            <button type="button" class="ink-tool" data-editor-target="photoFlip" data-action="click->editor#flipPhoto">Flip</button>
+            <button type="button" class="ink-tool" data-editor-target="photoCover" data-action="click->editor#togglePhotoCover">Fill panel</button>
+            <button type="button" data-action="click->editor#removePhoto">Remove</button>
+          </div>
+        </div>
       </div>
-      <div class="tray-section">
-        <span class="tray-label">Size</span>
-        <button type="button" class="ink-size" data-editor-target="drawSize" data-size="s" data-action="click->editor#selectDrawSize">S</button>
-        <button type="button" class="ink-size" data-editor-target="drawSize" data-size="m" data-action="click->editor#selectDrawSize">M</button>
-        <button type="button" class="ink-size" data-editor-target="drawSize" data-size="l" data-action="click->editor#selectDrawSize">L</button>
-      </div>
+
       <div class="tray-section">
         <button type="button" data-action="click->editor#exitFocus">Whole page</button>
         <span class="tray-hint">Tap a panel to zoom in and draw.</span>

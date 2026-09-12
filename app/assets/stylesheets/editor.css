@@ -231,10 +231,12 @@
   fill: var(--color-ink);
 }
 
+.panel-photo,
 .panel-ink {
-  /* The panel's outline polygon (rendered after this group, so it's on
+  /* The panel's outline polygon (rendered after both groups, so it's on
      top — see panel_controller.js#renderPanel) is what actually starts a
-     draw/erase gesture; ink itself never needs to intercept a pointer. */
+     draw/erase/pan gesture; neither layer needs to intercept a pointer
+     itself. */
   pointer-events: none;
 }
 
@@ -256,6 +258,22 @@
 .ink-color--active {
   outline: 3px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+.draw-layer-tabs {
+  display: flex;
+  margin-bottom: 0.5rem;
+}
+
+.draw-layer-tab {
+  flex: 1;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.draw-layer-tab--active {
+  background: var(--color-accent);
+  color: var(--color-ink);
 }
 
 .panel-focus-dim {

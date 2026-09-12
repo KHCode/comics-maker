@@ -4,6 +4,15 @@ class Page < ApplicationRecord
   # projects list can sort by "most recently worked on."
   belongs_to :project, touch: true
 
+  # The real record behind a panel's photo.src (a blob signed_id, per the
+  # doc's panel.photo schema) — panels themselves stay pure JSON (see
+  # `data` below), but attaching the blob here gives uploaded photos a real
+  # owner for lifecycle purposes (so they're destroyed with the page,
+  # rather than orphaned rows Active Storage never cleans up). See
+  # PagesController#update for where new blobs referenced in `data` get
+  # attached.
+  has_many_attached :photos
+
   attribute :data, default: -> { { "schema_version" => 1, "panels" => [], "texts" => [] } }
 
   validates :name, presence: true

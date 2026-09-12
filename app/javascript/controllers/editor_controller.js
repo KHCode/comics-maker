@@ -20,14 +20,21 @@ const ADD_PANEL_OFFSET_CYCLE = 5
 // page" the way paginated formats do, since the page is one continuous,
 // ever-growing canvas: see applyWebtoonPreset.
 export default class extends Controller {
-  static targets = ["tab", "tray", "emptyHint", "page", "drawTool", "drawColor", "drawSize"]
+  static targets = [
+    "tab", "tray", "emptyHint", "page",
+    "drawTool", "drawColor", "drawSize",
+    "drawLayerTab", "drawLayerPanel",
+    "photoFileInput", "cameraFileInput", "photoInsert", "photoFit",
+    "photoScale", "photoRotate", "photoFlip", "photoCover"
+  ]
   static values = {
     format: String,
     pageUnitHeight: Number,
     mode: String,
     drawTool: { type: String, default: "pen" },
     drawColor: { type: String, default: INK_COLORS[0] },
-    drawSize: { type: String, default: "m" }
+    drawSize: { type: String, default: "m" },
+    drawLayer: { type: String, default: "ink" }
   }
 
   connect() {
@@ -36,6 +43,8 @@ export default class extends Controller {
     this.updateDrawToolUI()
     this.updateDrawColorUI()
     this.updateDrawSizeUI()
+    this.updateDrawLayerUI()
+    this.syncPhotoControls()
   }
 
   switchMode(event) {
@@ -97,6 +106,83 @@ export default class extends Controller {
     this.drawSizeTargets.forEach((button) => {
       button.classList.toggle("ink-size--active", button.dataset.size === this.drawSizeValue)
     })
+  }
+
+  // Draw mode's Ink/Photo sub-tabs — which of the two tool panels the tray
+  // shows underneath the mode tabs. panel_controller.js reads the current
+  // value the same way it reads currentDrawTool/Color/Size.
+  selectDrawLayer(event) {
+    this.drawLayerValue = event.currentTarget.dataset.layer
+    this.updateDrawLayerUI()
+  }
+
+  updateDrawLayerUI() {
+    this.drawLayerTabTargets.forEach((tab) => {
+      tab.classList.toggle("draw-layer-tab--active", tab.dataset.layer === this.drawLayerValue)
+    })
+    this.drawLayerPanelTargets.forEach((panel) => {
+      panel.hidden = panel.dataset.layer !== this.drawLayerValue
+    })
+  }
+
+  // Photo insert buttons just proxy to their own (hidden) file input —
+  // "Camera" is the same upload pipeline as "Photos", just a second input
+  // with a `capture` attribute so mobile browsers offer the camera instead
+  // of a file browser (inert on desktop, where this test suite runs).
+  choosePhoto() {
+    this.photoFileInputTarget.click()
+  }
+
+  capturePhoto() {
+    this.cameraFileInputTarget.click()
+  }
+
+  uploadPhoto(event) {
+    const file = event.target.files[0]
+    event.target.value = "" // allow choosing the same file again later
+    if (!file) return
+
+    this.focusedPanelController?.insertPhotoFile(file)
+  }
+
+  updatePhotoScale(event) {
+    this.focusedPanelController?.setPhotoScale(Number(event.target.value))
+  }
+
+  updatePhotoRotate(event) {
+    this.focusedPanelController?.setPhotoRotate(Number(event.target.value))
+  }
+
+  flipPhoto() {
+    this.focusedPanelController?.flipPhoto()
+  }
+
+  togglePhotoCover() {
+    this.focusedPanelController?.togglePhotoCover()
+  }
+
+  removePhoto() {
+    this.focusedPanelController?.removePhoto()
+  }
+
+  // Keeps the Fit tab's sliders/toggles reflecting whichever panel is
+  // actually focused (rather than whatever the last-focused panel's photo
+  // happened to be set to) — called whenever focus changes and after any
+  // document mutation, since panning/inserting/removing a photo all need
+  // the same resync.
+  syncPhotoControls() {
+    const photo = this.focusedPanelController?.focusedPanelPhoto ?? null
+
+    if (this.hasPhotoInsertTarget) this.photoInsertTarget.hidden = !!photo
+    if (this.hasPhotoFitTarget) this.photoFitTarget.hidden = !photo
+    if (this.hasPhotoScaleTarget) this.photoScaleTarget.value = photo?.pct ?? 100
+    if (this.hasPhotoRotateTarget) this.photoRotateTarget.value = photo?.rot ?? 0
+    if (this.hasPhotoFlipTarget) this.photoFlipTarget.classList.toggle("ink-tool--active", !!photo?.flip)
+    if (this.hasPhotoCoverTarget) this.photoCoverTarget.classList.toggle("ink-tool--active", !!photo?.cover)
+  }
+
+  get focusedPanelController() {
+    return this.pageTargets.map((pageEl) => this.panelControllerFor(pageEl)).find((pc) => pc?.focusedPanelId)
   }
 
   // Draw tray's "Whole page" button and the header's ✕ (see

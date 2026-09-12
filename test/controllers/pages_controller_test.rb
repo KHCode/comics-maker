@@ -45,6 +45,46 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Page 1", page.name
   end
 
+  test "update attaches a newly referenced photo blob to the page" do
+    project = @user.projects.create!(name: "Paginated", format: :comic)
+    page = project.pages.create!(position: 1, name: "Page 1")
+    blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("fake image bytes"), filename: "cat.png", content_type: "image/png")
+
+    panels = [ { "id" => "p1", "pts" => [ [ 0, 0 ], [ 100, 0 ], [ 100, 100 ], [ 0, 100 ] ], "strokes" => [],
+                 "photo" => { "src" => blob.signed_id, "filename" => "cat.png", "nw" => 400, "nh" => 300, "x" => 0, "y" => 0, "pct" => 100, "rot" => 0, "flip" => false, "cover" => false } } ]
+
+    patch project_page_path(project, page), params: { page: { panels: panels, texts: [], photo_signed_ids: [ blob.signed_id ] } }, as: :json
+
+    assert_response :no_content
+    # page.photos (has_many_attached) yields Attachment records, not Blobs
+    # — compare against the blob each attachment actually points at.
+    assert_equal [ blob.id ], page.reload.photos.map(&:blob_id)
+  end
+
+  test "update does not duplicate an already-attached photo blob on a later save" do
+    project = @user.projects.create!(name: "Paginated", format: :comic)
+    page = project.pages.create!(position: 1, name: "Page 1")
+    blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("fake image bytes"), filename: "cat.png", content_type: "image/png")
+    page.photos.attach(blob)
+
+    patch project_page_path(project, page), params: { page: { panels: [], texts: [], photo_signed_ids: [ blob.signed_id ] } }, as: :json
+
+    assert_response :no_content
+    # page.photos (has_many_attached) yields Attachment records, not Blobs
+    # — compare against the blob each attachment actually points at.
+    assert_equal [ blob.id ], page.reload.photos.map(&:blob_id)
+  end
+
+  test "update tolerates an invalid or expired photo signed_id without erroring" do
+    project = @user.projects.create!(name: "Paginated", format: :comic)
+    page = project.pages.create!(position: 1, name: "Page 1")
+
+    patch project_page_path(project, page), params: { page: { panels: [], texts: [], photo_signed_ids: [ "not-a-real-signed-id" ] } }, as: :json
+
+    assert_response :no_content
+    assert_empty page.reload.photos
+  end
+
   test "update rejects a request with no page param" do
     project = @user.projects.create!(name: "Paginated", format: :comic)
     page = project.pages.create!(position: 1, name: "Page 1")

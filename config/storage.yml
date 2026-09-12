@@ -12,12 +12,19 @@ local:
 # swapped or rotated without a new deploy. See config/environments/
 # production.rb for where this is selected, and Aptfile/app.json for the
 # libvips system dependency image_processing needs to generate variants.
+#
+# Active Storage parses this entire file (every service, not just the one
+# actually selected for the current environment) on every boot — so a bare
+# ENV.fetch with no default here would crash dev/test boot too, anywhere
+# the AWS_* vars aren't set, not just a genuinely misconfigured production.
+# app.json separately declares these "required" for an actual Heroku
+# deploy, so production itself still can't silently run without them.
 production:
   service: S3
-  access_key_id: <%= ENV.fetch("AWS_ACCESS_KEY_ID") %>
-  secret_access_key: <%= ENV.fetch("AWS_SECRET_ACCESS_KEY") %>
+  access_key_id: <%= ENV.fetch("AWS_ACCESS_KEY_ID", nil) %>
+  secret_access_key: <%= ENV.fetch("AWS_SECRET_ACCESS_KEY", nil) %>
   region: <%= ENV.fetch("AWS_REGION", "us-east-1") %>
-  bucket: <%= ENV.fetch("AWS_BUCKET") %>
+  bucket: <%= ENV.fetch("AWS_BUCKET", nil) %>
 
 # Remember not to checkin your GCS keyfile to a repository
 # google:
