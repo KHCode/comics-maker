@@ -103,22 +103,21 @@
   max-height: 100%;
 }
 
-.page-focus-exit {
+.header-focus-exit {
+  /* Panels now zoom in with only a minimal margin (see FOCUS_MARGIN_RATIO
+     in panel_controller.js), so a "Whole page" button floating over the
+     canvas — even pinned to a corner — risked covering part of the
+     panel. Living in the header's own button row instead keeps it fully
+     outside the canvas area, always reachable, never covering anything —
+     an absolutely-positioned corner button was tried first, but the
+     header's own right-aligned "Sign out" already occupies that exact
+     corner. Hidden by default; editor_controller.js's
+     updateFocusIndicator toggles .editor--focused (see below) as pages
+     focus/unfocus a panel. */
   display: none;
-  /* Positioned relative to .page--focused (itself position: fixed, sized
-     to exactly .editor-canvas's rect — see positionFocusOverlay()), not
-     independently fixed to the viewport — the header sits above it
-     (z-index 200 > .page--focused's 100) and would otherwise paint over
-     a viewport-anchored button pinned near the top-right corner. */
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  z-index: 1;
 }
 
-.page--focused .page-focus-exit {
-  /* The real footer's "Whole page" button is covered by this overlay, so
-     focus needs its own reachable way out. */
+.editor--focused .header-focus-exit {
   display: inline-flex;
 }
 

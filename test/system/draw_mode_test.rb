@@ -243,9 +243,32 @@ class DrawModeTest < ApplicationSystemTestCase
       "expected the focused panel to be vertically centered within the header/footer gap (top margin #{top_margin}, bottom margin #{bottom_margin})"
   end
 
-  test "clicking the focus container's own background (not just the SVG's dim overlay) exits focus" do
+  test "the viewBox margin around a focused panel is small relative to the panel itself" do
     user = User.create!(name: "Drawer", email: "draw12@kapow.test", password: "password123")
-    project = create_project_with_panel(user)
+    project = create_project_with_panel(user) # BOX_PTS is 200x200 (page units)
+
+    sign_in(user)
+    visit project_path(project)
+
+    switch_to_draw_mode
+    find("polygon.panel-outline[data-panel-id='p1']").click
+
+    zoomed_width = canvas_view_box.split(" ")[2].to_f
+    panel_width = 200.0
+
+    # Not stretched to match the container's own aspect ratio (an earlier
+    # version of this method did that, to eliminate letterboxing entirely —
+    # but "however much the aspect ratio needs" isn't a small margin, it
+    # ballooned the sides for anything but a lucky aspect match). A margin
+    # over 25% of the panel's own size would no longer read as "a sliver of
+    # context," regardless of container shape.
+    assert zoomed_width < panel_width * 1.25,
+      "expected a small margin around the panel, got a viewBox width of #{zoomed_width} for a #{panel_width}-wide panel"
+  end
+
+  test "clicking the focus container's own background (letterboxed outside the panel's own aspect ratio) exits focus" do
+    user = User.create!(name: "Drawer", email: "draw13@kapow.test", password: "password123")
+    project = create_project_with_panel(user) # a square panel, in a landscape canvas area
 
     sign_in(user)
     visit project_path(project)
@@ -255,38 +278,56 @@ class DrawModeTest < ApplicationSystemTestCase
     find("polygon.panel-outline[data-panel-id='p1']").click
     assert_not_equal original_view_box, canvas_view_box
 
-    # updateFocusViewBox now matches the container's own aspect ratio, so
-    # in practice the SVG fills .page--focused almost exactly (no real
-    # letterbox gap left to click into) — this instead directly confirms
-    # panel_controller.js's own background-click listener on .page--focused
-    # itself, a defense-in-depth exit path for whatever residual gap
-    # rounding (or an unusual container/panel shape) leaves behind, kept
-    # independent of the dim overlay's tap-to-exit (which only covers the
-    # margin *inside* the SVG's viewBox).
+    # A square panel in a landscape canvas area binds on height, leaving a
+    # real letterbox margin left/right of the SVG itself — background
+    # here is .page--focused's own background, not part of the SVG, so it
+    # needs panel_controller.js's own background-click listener (not the
+    # dim overlay's, which only covers the margin *inside* the viewBox) to
+    # exit focus.
+    svg_rect = page.evaluate_script("document.querySelector('svg.page-canvas').getBoundingClientRect()")
+    assert svg_rect["left"] > 20, "expected real letterbox margin to the left of the focused panel to click into (svg left=#{svg_rect['left']})"
+
+    # A plain coordinate click via Capybara has proven unreliable against
+    # this element elsewhere in this file — dispatching directly at a
+    # point confirmed (via elementFromPoint) to be background, not the
+    # SVG, exercises the same panel_controller.js listener without
+    # fighting that.
     page.execute_script(<<~JS)
       const pageEl = document.querySelector('[data-controller~="panel"]');
-      pageEl.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      const rect = pageEl.getBoundingClientRect();
+      const el = document.elementFromPoint(rect.left + 5, rect.top + 5);
+      el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     JS
     assert_equal original_view_box, canvas_view_box
     assert_no_selector ".panel-focus-dim"
   end
 
-  test "a focused panel's SVG fills the canvas area on both axes, regardless of the panel's own aspect ratio" do
-    user = User.create!(name: "Drawer", email: "draw13@kapow.test", password: "password123")
-    project = create_project_with_panel(user) # a square panel, in a landscape canvas area
+  test "the header's exit button appears only while focused, lives outside the canvas, and exits on click" do
+    user = User.create!(name: "Drawer", email: "draw14@kapow.test", password: "password123")
+    project = create_project_with_panel(user)
 
     sign_in(user)
     visit project_path(project)
 
+    assert_no_selector ".header-focus-exit", visible: true
+
+    original_view_box = canvas_view_box
     switch_to_draw_mode
     find("polygon.panel-outline[data-panel-id='p1']").click
+    assert_not_equal original_view_box, canvas_view_box
 
-    svg_rect = page.evaluate_script("document.querySelector('svg.page-canvas').getBoundingClientRect()")
+    exit_button = find(".header-focus-exit")
+
+    # Confirms it can never cover part of the (now minimally-margined,
+    # nearly edge-to-edge) panel: the button's box must sit entirely
+    # within the header, above where the canvas area even starts.
+    button_rect = exit_button.native.rect
     canvas_rect = page.evaluate_script("document.querySelector('.editor-canvas').getBoundingClientRect()")
+    assert button_rect.y + button_rect.height <= canvas_rect["top"],
+      "expected the exit button to sit entirely within the header, above the canvas area (button bottom=#{button_rect.y + button_rect.height}, canvas top=#{canvas_rect['top']})"
 
-    assert_in_delta svg_rect["width"], canvas_rect["width"], 5,
-      "expected the focused SVG to fill the canvas area's width (svg=#{svg_rect['width']}, canvas=#{canvas_rect['width']})"
-    assert_in_delta svg_rect["height"], canvas_rect["height"], 5,
-      "expected the focused SVG to fill the canvas area's height (svg=#{svg_rect['height']}, canvas=#{canvas_rect['height']})"
+    exit_button.click
+    assert_equal original_view_box, canvas_view_box
+    assert_no_selector ".header-focus-exit", visible: true
   end
 end

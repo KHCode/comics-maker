@@ -17,6 +17,8 @@
     <%= render "projects/save_dialog" %>
     <button type="button" disabled>Export</button>
 
+    <button type="button" class="header-focus-exit" data-action="click->editor#exitFocus" aria-label="Exit zoomed-in panel">✕</button>
+
     <%= button_to "Sign out", session_path, method: :delete, form: { class: "inline-form" } %>
   </header>
 
@@ -35,7 +37,7 @@
         <div class="page"
              data-controller="document-store panel"
              data-editor-target="page"
-             data-action="document-store:change->panel#refresh click->editor#selectPage panel:selected->editor#selectPage"
+             data-action="document-store:change->panel#refresh click->editor#selectPage panel:selected->editor#selectPage panel:focused->editor#updateFocusIndicator panel:unfocused->editor#updateFocusIndicator"
              data-document-store-project-id-value="<%= @project.id %>"
              data-document-store-page-id-value="<%= page.id %>"
              data-document-store-initial-data-value="<%= page.data.to_json %>">
@@ -46,7 +48,6 @@
             <% end %>
           </div>
           <svg class="page-canvas" data-panel-target="canvas" data-action="pointerdown->panel#deselectOnBackgroundPointerDown" viewBox="0 0 <%= @project.page_width %> <%= page.height %>" role="img" aria-label="<%= page.name %>"></svg>
-          <button type="button" class="page-focus-exit" data-action="click->panel#exitFocus">✕ Whole page</button>
         </div>
       <% end %>
     </div>

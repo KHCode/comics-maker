@@ -49,12 +49,23 @@ export default class extends Controller {
     })
   }
 
-  // Draw tray's "Whole page" button — panel_controller reads the current
-  // mode straight off this element's data-editor-mode-value attribute
-  // (see panel_controller.js#currentMode), so exiting focus doesn't need
-  // its own mode check here.
+  // Draw tray's "Whole page" button and the header's ✕ (see
+  // updateFocusIndicator) — panel_controller reads the current mode
+  // straight off this element's data-editor-mode-value attribute (see
+  // panel_controller.js#currentMode), so exiting focus doesn't need its
+  // own mode check here.
   exitFocus() {
     this.pageTargets.forEach((pageEl) => this.panelControllerFor(pageEl)?.exitFocus())
+  }
+
+  // Shows/hides the header's ✕ exit button (see panel_controller.js's
+  // "focused"/"unfocused" dispatches) — re-derived from actual state
+  // rather than a simple counter, so it stays correct even in the
+  // (currently unreachable in the UI, but not actually prevented)
+  // edge case of more than one page being focused at once.
+  updateFocusIndicator() {
+    const anyFocused = this.pageTargets.some((pageEl) => this.panelControllerFor(pageEl)?.focusedPanelId)
+    this.element.classList.toggle("editor--focused", anyFocused)
   }
 
   selectPage(event) {

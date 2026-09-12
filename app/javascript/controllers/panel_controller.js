@@ -22,9 +22,10 @@ const BAR_MARGIN_ABOVE = 12
 const DUPLICATE_OFFSET = 24
 
 // How much margin (as a fraction of the focused panel's own width/height)
-// stays visible around it when zoomed in — enough to see it's dimmed
-// context, not so much that the panel itself stops filling the view.
-const FOCUS_MARGIN_RATIO = 0.15
+// stays visible around it when zoomed in — just enough to see past its
+// edge into the dimmed context, not a large buffer that eats into how big
+// the panel itself renders.
+const FOCUS_MARGIN_RATIO = 0.04
 
 // Renders panels as SVG shapes with matching clip-paths (see
 // kapow/panel_render.js), and handles selecting, dragging (move),
@@ -404,11 +405,11 @@ export default class extends Controller {
     // from under the user while they're focused on a panel.
     this.element.classList.add("page--focused")
     this.editorCanvasElement?.classList.add("editor-canvas--locked")
-    this.boundPositionFocusOverlay ||= () => {
-      this.positionFocusOverlay()
-      this.updateFocusViewBox()
-      this.renderAll(this.currentPanels)
-    }
+    // Only the overlay's own position/size depends on the viewport (the
+    // viewBox margin is purely a function of the panel's own bounding
+    // box — see updateFocusViewBox), so a resize only needs to re-measure
+    // .editor-canvas, not recompute the viewBox.
+    this.boundPositionFocusOverlay ||= () => this.positionFocusOverlay()
     window.addEventListener("resize", this.boundPositionFocusOverlay)
     this.positionFocusOverlay()
     // Removing the container's own padding (see .page--focused in
@@ -424,6 +425,13 @@ export default class extends Controller {
     this.element.addEventListener("pointerdown", this.boundExitFocusOnBackgroundClick)
     this.updateFocusViewBox()
     this.renderAll(this.currentPanels)
+    // Lets editor_controller.js show/hide the header's exit button (see
+    // updateFocusIndicator) without polling every page's panel controller
+    // itself — panels now zoom in close enough to the edges (a minimal
+    // margin, by design) that a corner button floating over the canvas
+    // risks covering part of the panel, so the exit affordance lives in
+    // the header instead, safely outside the canvas entirely.
+    this.dispatch("focused", { bubbles: true })
   }
 
   exitFocus() {
@@ -439,6 +447,7 @@ export default class extends Controller {
     this.element.style.removeProperty("height")
     this.canvasTarget.setAttribute("viewBox", this.originalViewBox)
     this.renderAll(this.currentPanels)
+    this.dispatch("unfocused", { bubbles: true })
   }
 
   // .page--focused is `position: fixed` so it's immune to .editor-canvas's
@@ -470,34 +479,22 @@ export default class extends Controller {
     const marginX = Math.max(width, 1) * FOCUS_MARGIN_RATIO
     const marginY = Math.max(height, 1) * FOCUS_MARGIN_RATIO
 
-    let boxWidth = width + marginX * 2
-    let boxHeight = height + marginY * 2
-
-    // Match the container's own aspect ratio so the SVG fills it exactly
-    // on *both* axes (see .page-canvas's max-width/max-height in
-    // editor.css) — otherwise, unless the panel's own aspect ratio
-    // happens to match the container's, one axis always letterboxes onto
-    // .page--focused's plain background. This grows the *view* (more
-    // dimmed context on whichever axis needs it), never the panel itself,
-    // so nothing about the panel's own shape gets stretched or distorted.
-    const containerRect = this.editorCanvasElement?.getBoundingClientRect()
-    if (containerRect && containerRect.width > 0 && containerRect.height > 0) {
-      const containerRatio = containerRect.width / containerRect.height
-      if (boxWidth / boxHeight > containerRatio) {
-        boxHeight = boxWidth / containerRatio
-      } else {
-        boxWidth = boxHeight * containerRatio
-      }
-    }
-
-    const centerX = box.minX + width / 2
-    const centerY = box.minY + height / 2
-
+    // Deliberately not stretched to match the container's own aspect
+    // ratio: doing that (an earlier version of this method did) grows
+    // whichever axis is needed to eliminate letterboxing entirely, but
+    // "however much the aspect ratio needs" has no relation to "a small,
+    // consistent margin" — for a square panel in a wide window it ballooned
+    // the side margins far past a thin sliver of context. A plain margin
+    // on the panel's own bounding box keeps that margin minimal and
+    // predictable; the tradeoff is that .page-canvas's max-width/
+    // max-height (editor.css) may still letterbox onto .page--focused's
+    // own (plain, undimmed) background when the panel's aspect ratio
+    // doesn't happen to match the container's.
     const viewBox = [
-      centerX - boxWidth / 2,
-      centerY - boxHeight / 2,
-      boxWidth,
-      boxHeight
+      box.minX - marginX,
+      box.minY - marginY,
+      width + marginX * 2,
+      height + marginY * 2
     ].join(" ")
     this.canvasTarget.setAttribute("viewBox", viewBox)
   }
