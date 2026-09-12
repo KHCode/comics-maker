@@ -66,3 +66,72 @@ export function photoRenderBox(photo, boxCenter, boxWidth, boxHeight) {
     height: photo.nh * scale
   }
 }
+
+// Scale/corner-drag handles for a selected photo (see panel_controller.js
+// #renderPhotoHandles/startPhotoScale). Each is named for its position on
+// the image's own *unrotated* bounding box, given as a [x, y] offset from
+// the box's center — the same local space toLocalPoint/toWorldPoint below
+// convert to/from.
+export function handleLocalPositions(width, height) {
+  const hw = width / 2
+  const hh = height / 2
+  return {
+    nw: [ -hw, -hh ], n: [ 0, -hh ], ne: [ hw, -hh ], e: [ hw, 0 ],
+    se: [ hw, hh ], s: [ 0, hh ], sw: [ -hw, hh ], w: [ -hw, 0 ]
+  }
+}
+
+function degToRad(deg) {
+  return (deg * Math.PI) / 180
+}
+
+// Converts a page-space (world) point into the photo's own local
+// coordinate space — unrotated, unflipped, relative to its own center —
+// by undoing the exact rotate+flip transform panel_controller.js renders
+// the <image> with (translate(center) rotate(rot) scale(flip?-1:1, 1)).
+// Used to interpret a pointer's drag position in the same local space the
+// handle positions above are already expressed in, regardless of the
+// photo's current rotation/flip.
+export function toLocalPoint(worldPoint, center, rot, flip) {
+  const dx = worldPoint.x - center.x
+  const dy = worldPoint.y - center.y
+  const rad = degToRad(-rot)
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const rx = dx * cos - dy * sin
+  const ry = dx * sin + dy * cos
+  return { x: flip ? -rx : rx, y: ry }
+}
+
+// The inverse of toLocalPoint — where a local point (e.g. one of
+// handleLocalPositions' entries) actually renders on the page, given the
+// photo's current rotation/flip. Used to position the handle dots
+// themselves so they track the image's actual (rotated) corners/edges.
+export function toWorldPoint(localPoint, center, rot, flip) {
+  const sx = flip ? -localPoint.x : localPoint.x
+  const rad = degToRad(rot)
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const wx = sx * cos - localPoint.y * sin
+  const wy = sx * sin + localPoint.y * cos
+  return { x: center.x + wx, y: center.y + wy }
+}
+
+// How far a handle has been dragged, expressed as a new pct: projects the
+// pointer's local-space position (see toLocalPoint) onto the handle's own
+// direction from center, and scales photo.pct by how that projected
+// distance compares to the handle's own original distance from center.
+// Uniform (not per-axis) on purpose — every handle, corner or edge alike,
+// scales the whole photo by the same factor around its own center, same
+// as the Scale slider, just driven by a drag instead of a fixed control.
+export function scalePctFromHandleDrag(originalPct, handleLocalPos, pointerLocalPos) {
+  const [ hx, hy ] = handleLocalPos
+  const originalDist = Math.hypot(hx, hy)
+  if (originalDist === 0) return originalPct
+
+  const dirX = hx / originalDist
+  const dirY = hy / originalDist
+  const projected = pointerLocalPos.x * dirX + pointerLocalPos.y * dirY
+
+  return clampScalePct(originalPct * (projected / originalDist))
+}

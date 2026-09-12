@@ -203,6 +203,32 @@
   cursor: copy;
 }
 
+.photo-handle {
+  fill: var(--color-accent);
+  stroke: var(--color-ink);
+  stroke-width: 2;
+}
+
+.photo-handle[data-photo-handle="nw"],
+.photo-handle[data-photo-handle="se"] {
+  cursor: nwse-resize;
+}
+
+.photo-handle[data-photo-handle="ne"],
+.photo-handle[data-photo-handle="sw"] {
+  cursor: nesw-resize;
+}
+
+.photo-handle[data-photo-handle="n"],
+.photo-handle[data-photo-handle="s"] {
+  cursor: ns-resize;
+}
+
+.photo-handle[data-photo-handle="e"],
+.photo-handle[data-photo-handle="w"] {
+  cursor: ew-resize;
+}
+
 .panel-floating-bar .floating-bar-button rect {
   fill: var(--color-surface-raised);
   stroke: var(--color-ink);

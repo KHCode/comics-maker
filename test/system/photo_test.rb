@@ -38,6 +38,14 @@ class PhotoTest < ApplicationSystemTestCase
     panel_polygon.click
   end
 
+  # A plain click (no movement) on the already-inserted photo — same
+  # element as focus_panel/panel_polygon, but this is the panel already
+  # zoomed in, so a tap here toggles the photo's own resize handles
+  # rather than focusing it.
+  def click_photo
+    panel_polygon.click
+  end
+
   def insert_sample_photo
     # The file input carries the `hidden` attribute on purpose — the
     # "Photos"/"Camera" buttons proxy clicks to it — so it needs visible:
@@ -199,6 +207,79 @@ class PhotoTest < ApplicationSystemTestCase
     assert photo["x"] > 0, "expected a rightward drag to produce a positive x offset"
     assert photo["y"] > 0, "expected a downward drag to produce a positive y offset"
     assert_in_delta 20.0 / 15.0, photo["x"] / photo["y"], 0.1
+  end
+
+  test "clicking the photo shows its 8 corner/edge resize handles, and clicking again hides them" do
+    user = User.create!(name: "Photog", email: "photo7@kapow.test", password: "password123")
+    project = create_project_with_panel(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_draw_mode
+    focus_panel
+    switch_to_photo_layer
+    insert_sample_photo
+
+    assert_no_selector ".photo-handle", visible: :all
+
+    click_photo
+    assert_selector ".photo-handle", count: 8, visible: :all
+    %w[nw n ne e se s sw w].each do |name|
+      assert_selector ".photo-handle[data-photo-handle='#{name}']", visible: :all
+    end
+
+    click_photo
+    assert_no_selector ".photo-handle", visible: :all
+  end
+
+  test "dragging a corner handle scales the photo up around its own center" do
+    user = User.create!(name: "Photog", email: "photo8@kapow.test", password: "password123")
+    project = create_project_with_panel(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_draw_mode
+    focus_panel
+    switch_to_photo_layer
+    insert_sample_photo
+    click_photo
+
+    before_image = find(".panel-photo[data-panel-id='p1'] image", visible: :all)
+    before_width = before_image["width"].to_f
+    before_height = before_image["height"].to_f
+
+    handle = find(".photo-handle[data-photo-handle='se']")
+    drag_element_by(handle, 40, 40)
+
+    photo = stored_panel["photo"]
+    assert photo["pct"] > 100, "expected dragging the se handle outward to grow pct (got #{photo['pct']})"
+    # Scaling is from the photo's own center, not an opposite-corner
+    # anchor — its pan offset (still centered on the panel) is untouched.
+    assert_equal 0, photo["x"]
+    assert_equal 0, photo["y"]
+
+    after_image = find(".panel-photo[data-panel-id='p1'] image", visible: :all)
+    assert after_image["width"].to_f > before_width
+    assert after_image["height"].to_f > before_height
+  end
+
+  test "dragging an edge handle also scales the photo, same as a corner" do
+    user = User.create!(name: "Photog", email: "photo9@kapow.test", password: "password123")
+    project = create_project_with_panel(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_draw_mode
+    focus_panel
+    switch_to_photo_layer
+    insert_sample_photo
+    click_photo
+
+    handle = find(".photo-handle[data-photo-handle='e']")
+    drag_element_by(handle, -30, 0) # drag the east handle inward, toward center
+
+    photo = stored_panel["photo"]
+    assert photo["pct"] < 100, "expected dragging the e handle inward to shrink pct (got #{photo['pct']})"
   end
 
   test "moving the panel in Layout mode carries the photo along (its pan offset is unchanged)" do

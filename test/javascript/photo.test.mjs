@@ -12,7 +12,11 @@ import {
   defaultPhoto,
   photoUrl,
   baseScale,
-  photoRenderBox
+  photoRenderBox,
+  handleLocalPositions,
+  toLocalPoint,
+  toWorldPoint,
+  scalePctFromHandleDrag
 } from "../../app/javascript/kapow/photo.js"
 
 test("defaultPhoto centers, un-rotated/flipped, at 100% and not filling", () => {
@@ -70,4 +74,71 @@ test("photoRenderBox scales width/height with the pct slider on top of the base 
   const box = photoRenderBox(photo, { x: 0, y: 0 }, 100, 100)
   assert.equal(box.width, 200) // 100 (100% contain) * 2
   assert.equal(box.height, 100)
+})
+
+test("handleLocalPositions places all 8 handles at the box's corners/edge-midpoints", () => {
+  assert.deepEqual(handleLocalPositions(200, 100), {
+    nw: [ -100, -50 ], n: [ 0, -50 ], ne: [ 100, -50 ], e: [ 100, 0 ],
+    se: [ 100, 50 ], s: [ 0, 50 ], sw: [ -100, 50 ], w: [ -100, 0 ]
+  })
+})
+
+test("toLocalPoint/toWorldPoint round-trip with no rotation or flip", () => {
+  const center = { x: 50, y: 50 }
+  const local = { x: 30, y: -10 }
+  const world = toWorldPoint(local, center, 0, false)
+  assert.deepEqual(world, { x: 80, y: 40 })
+  const roundTripped = toLocalPoint(world, center, 0, false)
+  assert.ok(Math.abs(roundTripped.x - local.x) < 1e-9)
+  assert.ok(Math.abs(roundTripped.y - local.y) < 1e-9)
+})
+
+test("toWorldPoint applies flip before rotation, mirroring the x axis", () => {
+  const center = { x: 0, y: 0 }
+  assert.deepEqual(toWorldPoint({ x: 30, y: 10 }, center, 0, true), { x: -30, y: 10 })
+})
+
+test("toWorldPoint rotates a point 90 degrees around the center", () => {
+  const center = { x: 0, y: 0 }
+  const world = toWorldPoint({ x: 10, y: 0 }, center, 90, false)
+  assert.ok(Math.abs(world.x - 0) < 1e-9)
+  assert.ok(Math.abs(world.y - 10) < 1e-9)
+})
+
+test("toLocalPoint/toWorldPoint round-trip with rotation and flip combined", () => {
+  const center = { x: 20, y: -15 }
+  const local = { x: 40, y: -25 }
+  for (const rot of [ -45, 0, 30, 90 ]) {
+    for (const flip of [ false, true ]) {
+      const world = toWorldPoint(local, center, rot, flip)
+      const roundTripped = toLocalPoint(world, center, rot, flip)
+      assert.ok(Math.abs(roundTripped.x - local.x) < 1e-9, `x mismatch at rot=${rot} flip=${flip}`)
+      assert.ok(Math.abs(roundTripped.y - local.y) < 1e-9, `y mismatch at rot=${rot} flip=${flip}`)
+    }
+  }
+})
+
+test("scalePctFromHandleDrag grows pct when a corner is dragged further from center", () => {
+  const handle = handleLocalPositions(200, 100).se // [100, 50]
+  const pct = scalePctFromHandleDrag(100, handle, { x: 150, y: 75 }) // 1.5x further out
+  assert.ok(Math.abs(pct - 150) < 1e-9)
+})
+
+test("scalePctFromHandleDrag shrinks pct when a corner is dragged toward center", () => {
+  const handle = handleLocalPositions(200, 100).se
+  const pct = scalePctFromHandleDrag(100, handle, { x: 50, y: 25 }) // half the distance
+  assert.equal(pct, 50)
+})
+
+test("scalePctFromHandleDrag on an edge handle only responds to movement along its own axis", () => {
+  const eastHandle = handleLocalPositions(200, 100).e // [100, 0]
+  // dragging straight down (perpendicular to east) barely changes pct
+  const pct = scalePctFromHandleDrag(100, eastHandle, { x: 100, y: 80 })
+  assert.equal(pct, 100)
+})
+
+test("scalePctFromHandleDrag clamps to the 20-300% range", () => {
+  const handle = handleLocalPositions(200, 100).se
+  assert.equal(scalePctFromHandleDrag(100, handle, { x: 1000, y: 500 }), MAX_SCALE_PCT)
+  assert.equal(scalePctFromHandleDrag(100, handle, { x: 1, y: 0.5 }), MIN_SCALE_PCT)
 })

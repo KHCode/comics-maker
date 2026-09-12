@@ -12,7 +12,17 @@ import {
   removeVertex
 } from "kapow/panel_geometry"
 import { INK_TOOLS, INK_SIZES, INK_COLORS, pressureOrDefault, strokeWidth, eraseStrokes } from "kapow/ink"
-import { defaultPhoto, photoUrl, photoRenderBox, clampScalePct, clampRotateDeg } from "kapow/photo"
+import {
+  defaultPhoto,
+  photoUrl,
+  photoRenderBox,
+  clampScalePct,
+  clampRotateDeg,
+  handleLocalPositions,
+  toLocalPoint,
+  toWorldPoint,
+  scalePctFromHandleDrag
+} from "kapow/photo"
 import { DirectUpload } from "@rails/activestorage"
 
 const SVG_NS = "http://www.w3.org/2000/svg"
@@ -38,6 +48,13 @@ const FOCUS_MARGIN_RATIO = 0.04
 // passes over thin ink lines.
 const ERASER_RADIUS_MULTIPLIER = 1.5
 
+// How far (screen pixels, not page units — this is about perceiving a
+// deliberate drag vs. a stationary tap, which is inherently a physical/
+// screen-space judgment regardless of the current zoom level) a pointer
+// has to move during a photo-pan gesture before it counts as an actual
+// pan rather than a tap toggling the resize handles (see startPhotoPan).
+const PHOTO_TAP_THRESHOLD_PX = 6
+
 // Renders panels as SVG shapes with matching clip-paths (see
 // kapow/panel_render.js), and handles selecting, dragging (move),
 // corner-handle scaling, the floating bar (shape/duplicate/delete), and
@@ -60,6 +77,7 @@ export default class extends Controller {
     this.selectedPanelId = null
     this.shapeMode = false
     this.focusedPanelId = null
+    this.photoSelected = false
     this.originalViewBox = this.canvasTarget.getAttribute("viewBox")
     this.boundHandleKeydown = this.handleKeydown.bind(this)
     document.addEventListener("keydown", this.boundHandleKeydown)
@@ -107,11 +125,12 @@ export default class extends Controller {
       : panels
     for (const panel of panelsToRender) this.renderPanel(panel)
     this.renderSelectionUI(panels)
+    this.renderPhotoHandles(panels)
     this.renderFocusOverlay(panels)
   }
 
   clear() {
-    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-background, :scope > .panel-handle, :scope > .panel-floating-bar, :scope > .panel-focus-dim, :scope > .panel-photo, :scope > .panel-ink, :scope > defs").forEach((el) => el.remove())
+    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-background, :scope > .panel-handle, :scope > .photo-handle, :scope > .panel-floating-bar, :scope > .panel-focus-dim, :scope > .panel-photo, :scope > .panel-ink, :scope > defs").forEach((el) => el.remove())
     this._defs = null
     this._floatingBar = null
   }
@@ -191,20 +210,29 @@ export default class extends Controller {
     return polyline
   }
 
+  // The photo's actual render box (center/width/height) for a given pts +
+  // photo pair — shared by rendering the <image> itself, positioning its
+  // scale handles, and both gestures' live previews, so all four stay
+  // derived from the exact same math.
+  computePhotoRender(pts, photo) {
+    if (!photo) return null
+    const box = boundingBox(pts)
+    const boxCenter = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 }
+    return photoRenderBox(photo, boxCenter, box.maxX - box.minX, box.maxY - box.minY)
+  }
+
   // Rebuilds one panel's photo (if any) as a single clipped <image> — used
-  // for the initial render and for the pan gesture's live preview (see
-  // startPhotoPan), which re-renders with a locally-modified photo object
-  // on every move and only commits the final x/y through the document
-  // store on release.
+  // for the initial render and for the pan/scale gestures' live previews
+  // (see startPhotoPan/startPhotoScale), which re-render with a locally-
+  // modified photo object on every move and only commit the final values
+  // through the document store on release.
   renderPhotoGroup(panelId, panel) {
     const group = this.canvasTarget.querySelector(`.panel-photo[data-panel-id="${panelId}"]`)
     if (!group) return
     group.replaceChildren()
     if (!panel.photo) return
 
-    const box = boundingBox(panel.pts)
-    const boxCenter = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 }
-    const render = photoRenderBox(panel.photo, boxCenter, box.maxX - box.minX, box.maxY - box.minY)
+    const render = this.computePhotoRender(panel.pts, panel.photo)
 
     const inner = document.createElementNS(SVG_NS, "g")
     inner.setAttribute(
@@ -222,6 +250,53 @@ export default class extends Controller {
 
     inner.appendChild(image)
     group.appendChild(inner)
+  }
+
+  // 8 drag handles (4 corners + 4 edge midpoints) for directly resizing
+  // the focused panel's photo — shown only once the photo itself has been
+  // tapped (see startPhotoPan's tap/drag distinction), not by default,
+  // the same "select, then see handles" flow Layout mode's own panel
+  // selection already uses.
+  renderPhotoHandles(panels) {
+    if (!this.focusedPanelId || !this.photoSelected || this.currentDrawLayer !== "photo") return
+
+    const panel = panels.find((p) => p.id === this.focusedPanelId)
+    if (!panel?.photo) return
+
+    const render = this.computePhotoRender(panel.pts, panel.photo)
+    const center = { x: render.centerX, y: render.centerY }
+    const positions = handleLocalPositions(render.width, render.height)
+
+    Object.entries(positions).forEach(([ name, [ lx, ly ] ]) => {
+      const world = toWorldPoint({ x: lx, y: ly }, center, panel.photo.rot, panel.photo.flip)
+
+      const handle = document.createElementNS(SVG_NS, "circle")
+      handle.setAttribute("class", "photo-handle")
+      handle.dataset.photoHandle = name
+      handle.setAttribute("cx", world.x)
+      handle.setAttribute("cy", world.y)
+      handle.setAttribute("r", VERTEX_HANDLE_RADIUS)
+      handle.addEventListener("pointerdown", (event) => this.startPhotoScale(event, panel.id, name))
+      this.canvasTarget.appendChild(handle)
+    })
+  }
+
+  // Live-repositions the 8 handle dots during a scale drag (see
+  // startPhotoScale) without rebuilding them, matching every other live-
+  // drag preview in this controller.
+  updatePhotoHandlePositions(pts, photo) {
+    const render = this.computePhotoRender(pts, photo)
+    if (!render) return
+    const center = { x: render.centerX, y: render.centerY }
+    const positions = handleLocalPositions(render.width, render.height)
+
+    this.canvasTarget.querySelectorAll(".photo-handle").forEach((handle) => {
+      const localPos = positions[handle.dataset.photoHandle]
+      if (!localPos) return
+      const world = toWorldPoint({ x: localPos[0], y: localPos[1] }, center, photo.rot, photo.flip)
+      handle.setAttribute("cx", world.x)
+      handle.setAttribute("cy", world.y)
+    })
   }
 
   // Draw mode's zoomed-in focus view: a dark overlay covering the whole
@@ -755,17 +830,32 @@ export default class extends Controller {
   // Live-previews locally without touching the store, the same
   // build-then-commit pattern ink/eraser use, so a full clear/rebuild of
   // every panel isn't needed on every pointermove.
+  //
+  // A tap (no real movement) doesn't commit a no-op pan — it toggles the
+  // 8 corner/edge resize handles instead (see renderPhotoHandles), the
+  // same "tap to select, then see handles" flow Layout mode's own panel
+  // selection uses, just without a separate click listener: the same
+  // pointerdown that would start a pan is the only way to reach the
+  // photo at all, since panning and tapping-to-select both start with a
+  // press on the same (photo-sized) area.
   startPhotoPan(event, panelId) {
     const panel = this.currentPanels.find((p) => p.id === panelId)
     if (!panel?.photo) return
 
     const startPoint = this.svgPoint(event)
+    const startClientX = event.clientX
+    const startClientY = event.clientY
     const originalX = panel.photo.x
     const originalY = panel.photo.y
     let lastX = originalX
     let lastY = originalY
+    let moved = false
 
     const onMove = (moveEvent) => {
+      if (Math.hypot(moveEvent.clientX - startClientX, moveEvent.clientY - startClientY) > PHOTO_TAP_THRESHOLD_PX) {
+        moved = true
+      }
+
       const current = this.svgPoint(moveEvent)
       lastX = originalX + (current.x - startPoint.x)
       lastY = originalY + (current.y - startPoint.y)
@@ -776,12 +866,60 @@ export default class extends Controller {
       window.removeEventListener("pointermove", onMove)
       window.removeEventListener("pointerup", onUp)
 
+      if (moved) {
+        this.documentStoreController.store.mutate((state) => {
+          const target = state.panels.find((p) => p.id === panelId)
+          if (target?.photo) {
+            target.photo.x = lastX
+            target.photo.y = lastY
+          }
+        })
+      } else {
+        this.photoSelected = !this.photoSelected
+        this.renderAll(this.currentPanels)
+      }
+    }
+
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }
+
+  // The 8 handles' own drag gesture: scales the whole photo uniformly
+  // around its own center (see kapow/photo.js#scalePctFromHandleDrag),
+  // driven by how far the pointer moves relative to that one handle's own
+  // original distance from center — in the photo's own local (unrotated,
+  // unflipped) space, so this works the same regardless of the photo's
+  // current rotation/flip.
+  startPhotoScale(event, panelId, handleName) {
+    event.stopPropagation()
+    event.preventDefault()
+
+    const panel = this.currentPanels.find((p) => p.id === panelId)
+    if (!panel?.photo) return
+
+    const originalPhoto = { ...panel.photo }
+    const originalRender = this.computePhotoRender(panel.pts, originalPhoto)
+    const center = { x: originalRender.centerX, y: originalRender.centerY }
+    const handleLocalPos = handleLocalPositions(originalRender.width, originalRender.height)[handleName]
+    let lastPct = originalPhoto.pct
+
+    const onMove = (moveEvent) => {
+      const pointerWorld = this.svgPoint(moveEvent)
+      const pointerLocal = toLocalPoint(pointerWorld, center, originalPhoto.rot, originalPhoto.flip)
+      lastPct = scalePctFromHandleDrag(originalPhoto.pct, handleLocalPos, pointerLocal)
+
+      const previewPhoto = { ...originalPhoto, pct: lastPct }
+      this.renderPhotoGroup(panelId, { ...panel, photo: previewPhoto })
+      this.updatePhotoHandlePositions(panel.pts, previewPhoto)
+    }
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+
       this.documentStoreController.store.mutate((state) => {
         const target = state.panels.find((p) => p.id === panelId)
-        if (target?.photo) {
-          target.photo.x = lastX
-          target.photo.y = lastY
-        }
+        if (target?.photo) target.photo.pct = lastPct
       })
     }
 
@@ -832,6 +970,7 @@ export default class extends Controller {
   exitFocus() {
     if (!this.focusedPanelId) return
     this.focusedPanelId = null
+    this.photoSelected = false
     this.element.classList.remove("page--focused")
     this.editorCanvasElement?.classList.remove("editor-canvas--locked")
     if (this.boundPositionFocusOverlay) window.removeEventListener("resize", this.boundPositionFocusOverlay)
