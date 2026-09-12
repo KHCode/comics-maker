@@ -209,6 +209,36 @@ class PhotoTest < ApplicationSystemTestCase
     assert_in_delta 20.0 / 15.0, photo["x"] / photo["y"], 0.1
   end
 
+  test "the resize handles hide during a pan and reappear correctly once released" do
+    user = User.create!(name: "Photog", email: "photo11@kapow.test", password: "password123")
+    project = create_project_with_panel(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_draw_mode
+    focus_panel
+    switch_to_photo_layer
+    insert_sample_photo
+
+    panel_polygon.click # select, showing handles
+    assert_selector ".photo-handle", count: 8, visible: :all
+
+    page.driver.browser.action
+      .move_to(panel_polygon.native)
+      .pointer_down
+      .move_by(20, 15)
+      .perform
+
+    # visible: true (the default) here, not :all — the handles still
+    # exist in the DOM while hidden (display: none), so :all would find
+    # them regardless; this specifically checks nothing is *visible*.
+    assert_no_selector ".photo-handle"
+
+    page.driver.browser.action.release.perform
+
+    assert_selector ".photo-handle", count: 8, visible: :all
+  end
+
   test "clicking the photo shows its 8 corner/edge resize handles, and clicking again hides them" do
     user = User.create!(name: "Photog", email: "photo7@kapow.test", password: "password123")
     project = create_project_with_panel(user)

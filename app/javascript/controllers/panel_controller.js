@@ -55,6 +55,13 @@ const ERASER_RADIUS_MULTIPLIER = 1.5
 // pan rather than a tap toggling the resize handles (see startPhotoPan).
 const PHOTO_TAP_THRESHOLD_PX = 6
 
+// The photo's resize handles are sized in *screen* pixels, not page units
+// (see photoHandleRadius) — Draw mode's focused view zooms a panel in far
+// enough to fill most of the canvas (see updateFocusViewBox), so a
+// page-unit radius that looks right for Layout mode's own (unzoomed)
+// corner handles would render enormous here.
+const PHOTO_HANDLE_SCREEN_RADIUS_PX = 9
+
 // Renders panels as SVG shapes with matching clip-paths (see
 // kapow/panel_render.js), and handles selecting, dragging (move),
 // corner-handle scaling, the floating bar (shape/duplicate/delete), and
@@ -275,10 +282,23 @@ export default class extends Controller {
       handle.dataset.photoHandle = name
       handle.setAttribute("cx", world.x)
       handle.setAttribute("cy", world.y)
-      handle.setAttribute("r", VERTEX_HANDLE_RADIUS)
+      handle.setAttribute("r", this.photoHandleRadius)
       handle.addEventListener("pointerdown", (event) => this.startPhotoScale(event, panel.id, name))
       this.canvasTarget.appendChild(handle)
     })
+  }
+
+  // Converts the desired on-screen handle size (see
+  // PHOTO_HANDLE_SCREEN_RADIUS_PX) into page units at the *current* zoom
+  // level, so the dots stay a constant, sensible size regardless of how
+  // far a given panel happens to be zoomed in.
+  get photoHandleRadius() {
+    const rect = this.canvasTarget.getBoundingClientRect()
+    const viewBoxWidth = this.canvasTarget.viewBox.baseVal.width
+    if (!rect.width || !viewBoxWidth) return PHOTO_HANDLE_SCREEN_RADIUS_PX
+
+    const scale = rect.width / viewBoxWidth
+    return PHOTO_HANDLE_SCREEN_RADIUS_PX / scale
   }
 
   // Live-repositions the 8 handle dots during a scale drag (see
@@ -841,6 +861,17 @@ export default class extends Controller {
   startPhotoPan(event, panelId) {
     const panel = this.currentPanels.find((p) => p.id === panelId)
     if (!panel?.photo) return
+
+    // Hide the resize handles (if shown) for the duration of the drag
+    // rather than repositioning all 8 alongside the image on every
+    // pointermove — live-updating them turned out to visibly glitch (a
+    // trailing/duplicate-looking dot) in real interactive use, even
+    // though the underlying math checked out. They reappear correctly
+    // positioned once the gesture ends and the store's mutation (or the
+    // tap branch's own renderAll below) triggers a full re-render anyway.
+    this.canvasTarget.querySelectorAll(".photo-handle").forEach((handle) => {
+      handle.style.display = "none"
+    })
 
     const startPoint = this.svgPoint(event)
     const startClientX = event.clientX
