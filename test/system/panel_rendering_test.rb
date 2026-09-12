@@ -43,15 +43,15 @@ class PanelRenderingTest < ApplicationSystemTestCase
 
     within "svg.page-canvas" do
       assert_selector "polygon.panel-outline", count: 4
-      assert_selector "polygon[data-panel-id='box1']"
-      assert_selector "polygon[data-panel-id='slant1']"
-      assert_selector "polygon[data-panel-id='round1']"
-      assert_selector "polygon[data-panel-id='burst1']"
+      assert_selector "polygon.panel-outline[data-panel-id='box1']"
+      assert_selector "polygon.panel-outline[data-panel-id='slant1']"
+      assert_selector "polygon.panel-outline[data-panel-id='round1']"
+      assert_selector "polygon.panel-outline[data-panel-id='burst1']"
 
       assert_selector "clipPath polygon", count: 4, visible: false
     end
 
-    box_polygon = find("polygon[data-panel-id='box1']")
+    box_polygon = find("polygon.panel-outline[data-panel-id='box1']")
     assert_equal "url(#panel-clip-box1)", box_polygon["clip-path"]
     assert_equal "50,50 300,50 300,300 50,300", box_polygon["points"]
   end

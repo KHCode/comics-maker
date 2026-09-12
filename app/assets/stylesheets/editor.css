@@ -148,6 +148,16 @@
   overflow: visible;
 }
 
+.panel-background {
+  /* Always white regardless of theme, matching .page-canvas below it — a
+     panel is opaque "paper" sitting on the page, not a transparent window,
+     so a panel earlier in stacking order (see panel_controller.js's
+     bringToFront/sendToBack) is actually hidden where a later one
+     overlaps it, rather than showing its ink/outline through. */
+  fill: #fff;
+  pointer-events: none;
+}
+
 .panel-outline {
   /* Always ink-black regardless of theme — panels sit on the page canvas,
      which itself always stays white (see .page-canvas above). Stroke width

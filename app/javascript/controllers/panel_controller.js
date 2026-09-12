@@ -109,7 +109,7 @@ export default class extends Controller {
   }
 
   clear() {
-    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-handle, :scope > .panel-floating-bar, :scope > .panel-focus-dim, :scope > .panel-ink, :scope > defs").forEach((el) => el.remove())
+    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-background, :scope > .panel-handle, :scope > .panel-floating-bar, :scope > .panel-focus-dim, :scope > .panel-ink, :scope > defs").forEach((el) => el.remove())
     this._defs = null
     this._floatingBar = null
   }
@@ -123,6 +123,17 @@ export default class extends Controller {
     clipPolygon.setAttribute("points", pointsAttr)
     clipPath.appendChild(clipPolygon)
     this.defs.appendChild(clipPath)
+
+    // An opaque backing shape, painted before anything else this panel
+    // owns, so an overlapping panel earlier in the array (rendered
+    // earlier, and therefore visually beneath this one — see
+    // bringToFront/sendToBack) has its ink and outline actually hidden by
+    // this one rather than showing through a transparent panel interior.
+    const background = document.createElementNS(SVG_NS, "polygon")
+    background.setAttribute("points", pointsAttr)
+    background.setAttribute("class", "panel-background")
+    background.dataset.panelId = panel.id
+    this.canvasTarget.appendChild(background)
 
     // Ink is appended (and clipped to the panel's own shape) before the
     // outline polygon below, so the panel's border always renders crisp on
@@ -308,9 +319,15 @@ export default class extends Controller {
     this.positionFloatingBar(bar, pts)
   }
 
+  // One button whose meaning flips with the selected panel's own stacking
+  // position: raised to "send to back" once it's already the topmost
+  // panel, "bring to front" otherwise — rather than two separate buttons
+  // for a state that's only ever relevant in one direction at a time.
   get floatingBarButtons() {
+    const isFrontmost = this.isPanelFrontmost(this.selectedPanelId)
     return [
       { action: "shape", label: "✎", active: this.shapeMode },
+      { action: "layer", label: isFrontmost ? "⬇" : "⬆" },
       { action: "duplicate", label: "⧉" },
       { action: "delete", label: "🗑" }
     ]
@@ -327,8 +344,49 @@ export default class extends Controller {
 
   handleFloatingBarAction(action) {
     if (action === "shape") this.toggleShapeMode()
+    else if (action === "layer") this.toggleLayerPosition()
     else if (action === "duplicate") this.duplicateSelected()
     else if (action === "delete") this.deleteSelected()
+  }
+
+  // Stacking order is just the panels array's own order — later elements
+  // paint later, and therefore sit visually on top (see renderAll/
+  // renderPanel) — so there's no separate z-index field to maintain; a
+  // newly added panel already lands on top for free, since every add
+  // (addPanel/applyPreset/duplicateSelected) appends to the end of the
+  // array. "Send to back"/"bring to front" just move the selected panel to
+  // the other end of that same array.
+  toggleLayerPosition() {
+    if (!this.selectedPanelId) return
+
+    if (this.isPanelFrontmost(this.selectedPanelId)) {
+      this.sendToBack(this.selectedPanelId)
+    } else {
+      this.bringToFront(this.selectedPanelId)
+    }
+  }
+
+  isPanelFrontmost(panelId) {
+    const panels = this.currentPanels
+    return panels.length > 0 && panels[panels.length - 1].id === panelId
+  }
+
+  bringToFront(panelId) {
+    this.documentStoreController.store.mutate((state) => {
+      const index = state.panels.findIndex((p) => p.id === panelId)
+      if (index === -1) return
+      const [ panel ] = state.panels.splice(index, 1)
+      state.panels.push(panel)
+    })
+  }
+
+  sendToBack(panelId) {
+    this.documentStoreController.store.mutate((state) => {
+      const index = state.panels.findIndex((p) => p.id === panelId)
+      if (index === -1) return
+      const [ panel ] = state.panels.splice(index, 1)
+      state.panels.unshift(panel)
+    })
   }
 
   toggleShapeMode() {
@@ -762,6 +820,9 @@ export default class extends Controller {
 
     const polygon = this.canvasTarget.querySelector(`polygon.panel-outline[data-panel-id="${panelId}"]`)
     if (polygon) polygon.setAttribute("points", pointsAttr)
+
+    const background = this.canvasTarget.querySelector(`.panel-background[data-panel-id="${panelId}"]`)
+    if (background) background.setAttribute("points", pointsAttr)
 
     const clipPolygon = this.canvasTarget.querySelector(`#${clipPathId(panelId)} polygon`)
     if (clipPolygon) clipPolygon.setAttribute("points", pointsAttr)
