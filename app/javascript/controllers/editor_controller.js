@@ -3,6 +3,7 @@ import { newPanel } from "kapow/panel_shapes"
 import { generatePreset, GUTTER } from "kapow/panel_layouts"
 import { boundingBox, translatePoints } from "kapow/panel_geometry"
 import { INK_COLORS } from "kapow/ink"
+import { defaultText } from "kapow/text"
 
 // New single-panel adds are dropped near page center, offset a bit further
 // each time so several adds in a row don't stack exactly on top of each
@@ -63,13 +64,15 @@ export default class extends Controller {
       tray.hidden = tray.dataset.mode !== mode
     })
 
-    // Layout's selection UI and Draw's zoomed-in focus are mode-specific —
-    // leaving either mode resets it, rather than letting it linger and
-    // resurface (still selected/still zoomed) if the user tabs back.
+    // Layout's selection UI, Draw's zoomed-in focus, and Letter's own
+    // text selection are all mode-specific — leaving a mode resets it,
+    // rather than letting it linger and resurface (still selected/still
+    // zoomed) if the user tabs back.
     this.pageTargets.forEach((pageEl) => {
       const panelController = this.panelControllerFor(pageEl)
       panelController?.deselect()
       panelController?.exitFocus()
+      this.textControllerFor(pageEl)?.deselect()
     })
   }
 
@@ -323,6 +326,25 @@ export default class extends Controller {
     })
   }
 
+  // Letter tray's "Add" buttons — same center-of-page, cycled-offset drop
+  // point as addPanel above (so several adds in a row don't stack exactly
+  // on top of each other), just targeting state.texts instead of
+  // state.panels.
+  addText(event) {
+    const pageEl = this.targetPageElement
+    if (!pageEl) return
+
+    const documentStore = this.documentStoreControllerFor(pageEl)
+    const { width, height } = this.pageDimensions(pageEl)
+
+    const existingCount = documentStore.store.getState().texts.length
+    const offset = (existingCount % ADD_PANEL_OFFSET_CYCLE) * ADD_PANEL_OFFSET_STEP
+
+    documentStore.store.mutate((state) => {
+      state.texts.push(defaultText(event.params.kind, width / 2 + offset, height / 2 + offset))
+    })
+  }
+
   hideEmptyHint() {
     if (this.hasEmptyHintTarget) this.emptyHintTarget.hidden = true
   }
@@ -342,6 +364,10 @@ export default class extends Controller {
 
   panelControllerFor(pageEl) {
     return this.application.getControllerForElementAndIdentifier(pageEl, "panel")
+  }
+
+  textControllerFor(pageEl) {
+    return this.application.getControllerForElementAndIdentifier(pageEl, "text")
   }
 
   pageDimensions(pageEl) {

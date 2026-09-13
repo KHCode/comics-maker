@@ -54,6 +54,10 @@
 }
 
 .page {
+  /* Positioning context for .page-text-layer (see below) — its transform
+     is computed relative to this element's own box, which also includes
+     .page-toolbar above the canvas. */
+  position: relative;
   border-radius: var(--radius);
   outline: 3px solid transparent;
   outline-offset: 6px;
@@ -255,6 +259,109 @@
   /* Explicit ink, not --color-text: the accent fill stays bright yellow in
      dark mode too, so the theme-swapped text would be unreadable. */
   fill: var(--color-ink);
+}
+
+.page-text-layer {
+  /* Positioned/scaled via a single JS-computed transform (see
+     text_controller.js#updateTransform) to sit exactly over the page's
+     own SVG canvas — every .text-box below is then laid out in plain
+     "page unit" pixels, the same coordinate space the SVG's own viewBox
+     content uses, and that one transform converts both to real screen
+     pixels uniformly. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  /* Individual text boxes re-enable this themselves — lets a click on
+     empty space between boxes fall through to the SVG canvas underneath,
+     so panel_controller's own background-click handling (deselect/exit
+     focus) still fires. */
+  pointer-events: none;
+}
+
+.text-box {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  cursor: move;
+  pointer-events: auto;
+  user-select: none;
+  overflow: hidden;
+  color: var(--color-ink);
+}
+
+.text-box-content {
+  width: 100%;
+  /* Guarantees this stays a real, clickable/"visible" target even with no
+     text in it yet (a freshly-dropped, unedited text element) — otherwise
+     an empty div renders with zero height. */
+  min-height: 1em;
+  outline: none;
+  overflow-wrap: break-word;
+}
+
+.text-box-content[contenteditable="true"] {
+  cursor: text;
+  user-select: text;
+}
+
+.text-box--speech,
+.text-box--narration {
+  background: #fff;
+  border: 3px solid var(--color-ink);
+  justify-content: center;
+  text-align: center;
+}
+
+.text-box--speech {
+  border-radius: 50%;
+}
+
+/* The classic "half-hidden square" speech-bubble tail: a small white
+   diamond straddling the ellipse's own bottom edge, with only its
+   bottom-right two sides bordered so it reads as a single continuous
+   outline poking out below the bubble. Fixed in place for this PR — a
+   draggable tail (following the stored tail:[x,y] point) is the doc's
+   "Letter floating bar + tail dragging" PR. */
+.text-box--speech::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  width: 24px;
+  height: 24px;
+  margin-left: -12px;
+  background: #fff;
+  border-right: 3px solid var(--color-ink);
+  border-bottom: 3px solid var(--color-ink);
+  transform: rotate(45deg);
+  z-index: -1;
+}
+
+.text-box--caption {
+  background: var(--color-accent);
+  border: 3px solid var(--color-ink);
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.text-box--selected {
+  outline: 3px dashed var(--color-sfx-red);
+  outline-offset: 3px;
+}
+
+.text-handle {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  width: 16px;
+  height: 16px;
+  background: var(--color-accent);
+  border: 2px solid var(--color-ink);
+  border-radius: 3px;
+  cursor: nwse-resize;
 }
 
 .panel-photo,
