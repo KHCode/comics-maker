@@ -451,6 +451,28 @@ export default class extends Controller {
     return this.lastMutatedPageElement || this.targetPageElement
   }
 
+  // Phase 10 fast-follow: "switching projects" in this app just means
+  // clicking the header logo back to the Projects list (see
+  // shared/_logo.html.erb) — an ordinary Turbo Drive visit that tears down
+  // every document-store controller here, taking each one's in-memory
+  // undo/redo stack with it (session-only by design, see
+  // kapow/document_store.js). The page content itself is always safe
+  // (continuously autosaved via debounced PATCH), so nothing is actually
+  // lost except the ability to undo recent edits — rather than the far
+  // more complex alternative of persisting undo history across a real page
+  // navigation, this just warns before that capability quietly disappears,
+  // and lets the user cancel if they'd rather stay and undo first.
+  confirmLeaveIfUnsavedHistory(event) {
+    const anyUndoAvailable = this.pageTargets.some((pageEl) => this.documentStoreControllerFor(pageEl)?.store.canUndo)
+    if (!anyUndoAvailable) return
+
+    const leave = window.confirm(
+      "You have undo history on this page. Leaving will clear it — your changes are already saved, "
+      + "but you won't be able to undo them anymore. Leave anyway?"
+    )
+    if (!leave) event.preventDefault()
+  }
+
   // Per-page PNG export (see the plan's Phase 9) — rasterizes whichever
   // page Add-panel/Undo/etc. would currently target. See exportPdf below
   // for the whole-project, every-page PDF export.

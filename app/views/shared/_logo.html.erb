@@ -1,2 +1,6 @@
-<%# root_path is projects#index, matching the doc's "logo returns to Projects" exit. %>
-<%= link_to "Kapow!", root_path, class: "logo" %>
+<%# root_path is projects#index, matching the doc's "logo returns to Projects" exit.
+    The editor (projects/show) passes a `data:` local so this same link can
+    warn before it discards that page's session-only undo history — see
+    editor_controller.js#confirmLeaveIfUnsavedHistory. Every other page this
+    partial renders on has no undo history to lose, so they get none. %>
+<%= link_to "Kapow!", root_path, class: "logo", data: (local_assigns[:data] || {}) %>

@@ -1,6 +1,6 @@
 <div class="editor" data-controller="editor" data-editor-format-value="<%= @project.format %>" data-editor-page-unit-height-value="<%= @project.page_unit_height %>" data-editor-mode-value="layout" data-editor-direct-upload-url-value="<%= rails_direct_uploads_path %>">
   <header class="editor-header">
-    <%= render "shared/logo" %>
+    <%= render "shared/logo", data: { action: "click->editor#confirmLeaveIfUnsavedHistory" } %>
 
     <span class="editor-project-name"><%= @project.name %></span>
     <span class="editor-format"><%= @project.format.humanize %></span>
