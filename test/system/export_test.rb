@@ -90,6 +90,56 @@ class ExportTest < ApplicationSystemTestCase
     JS
   end
 
+  # [r, g, b, a] at (x, y) in the actual rasterized export — not just the
+  # markup string — for pixel-level regression checks (see the corner-
+  # bleed bug below, which no markup-only assertion would have caught).
+  def export_pixel_at(x, y)
+    page.evaluate_script(<<~JS)
+      (() => {
+        const pageEl = document.querySelector('[data-controller~="document-store"]')
+        const controller = window.Stimulus.getControllerForElementAndIdentifier(
+          document.querySelector('[data-controller~="editor"]'), "editor"
+        )
+        controller.panelControllerFor(pageEl)?.deselect()
+        controller.textControllerFor(pageEl)?.deselect()
+        return controller.renderPageToBlob(pageEl).then((blob) => createImageBitmap(blob)).then((bitmap) => {
+          const canvas = document.createElement("canvas")
+          canvas.width = bitmap.width
+          canvas.height = bitmap.height
+          const ctx = canvas.getContext("2d")
+          ctx.drawImage(bitmap, 0, 0)
+          return Array.from(ctx.getImageData(#{x}, #{y}, 1, 1).data)
+        })
+      })()
+    JS
+  end
+
+  test "the exported page has no border/rounded-corner UI chrome baked in, at any corner (regression)" do
+    user = User.create!(name: "Exporter", email: "export6@kapow.test", password: "password123")
+    project = user.projects.create!(name: "Comic", format: :comic)
+    # A panel that exactly covers the whole 620x956 page, so every corner
+    # pixel should be pure ink black (the panel's own outline) with no
+    # white gap or rounded curve from .page-canvas's own border/
+    # border-radius (real UI chrome — see editor.css — that used to get
+    # baked into the export, offsetting the whole page inward by its
+    # width and showing a rounded corner in one corner only, per a user
+    # report with a screenshot of exactly that).
+    project.pages.create!(position: 1, name: "Page 1", data: {
+      "schema_version" => 1,
+      "panels" => [ { "id" => "p1", "pts" => [ [ 0, 0 ], [ 620, 0 ], [ 620, 956 ], [ 0, 956 ] ], "strokes" => [], "photo" => nil } ],
+      "texts" => []
+    })
+
+    sign_in(user)
+    visit project_path(project)
+
+    [ [ 0, 0 ], [ 619, 0 ], [ 0, 955 ], [ 619, 955 ] ].each do |x, y|
+      pixel = export_pixel_at(x, y)
+      assert pixel[0] < 128 && pixel[1] < 128 && pixel[2] < 128,
+        "expected corner (#{x}, #{y}) to be dark (the panel outline), got rgb(#{pixel[0]}, #{pixel[1]}, #{pixel[2]})"
+    end
+  end
+
   test "clicking Export rasterizes the page and downloads a PNG with a name derived from the project/page" do
     user = User.create!(name: "Exporter", email: "export1@kapow.test", password: "password123")
     project = create_blank_project(user, name: "My Comic")

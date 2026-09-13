@@ -503,6 +503,15 @@ export default class extends Controller {
     const { width, height } = this.pageDimensions(pageEl)
 
     const exportSvg = svg.cloneNode(true)
+    // .page-canvas's own border/border-radius/background (see editor.css)
+    // are CSS box-model properties on the *live* <svg> element itself —
+    // real UI chrome (showing where the page sits on the desk), not part
+    // of the actual page content. A standalone rasterized SVG still
+    // renders them around its own viewport the same way, so keeping this
+    // class here baked that border (and its rounded corner) right into
+    // the exported image, offsetting everything inward by its width —
+    // confirmed by a user screenshot showing exactly that in one corner.
+    exportSvg.removeAttribute("class")
     exportSvg.setAttribute("width", width)
     exportSvg.setAttribute("height", height)
     exportSvg.setAttribute("xmlns", SVG_NS)
@@ -652,7 +661,15 @@ export default class extends Controller {
         const canvas = document.createElement("canvas")
         canvas.width = width
         canvas.height = height
-        canvas.getContext("2d").drawImage(image, 0, 0, width, height)
+        const ctx = canvas.getContext("2d")
+        // The comic page itself always stays white (see the doc), which
+        // used to come for free from .page-canvas's own CSS background —
+        // now stripped from the exported SVG along with its border (see
+        // buildExportSvgMarkup), so it needs to be filled in explicitly
+        // instead of leaving a transparent PNG background.
+        ctx.fillStyle = "#fff"
+        ctx.fillRect(0, 0, width, height)
+        ctx.drawImage(image, 0, 0, width, height)
         canvas.toBlob((blob) => {
           if (blob) resolve(blob)
           else reject(new Error("canvas.toBlob returned null"))
