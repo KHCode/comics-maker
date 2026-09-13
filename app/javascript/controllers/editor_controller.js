@@ -4,6 +4,19 @@ import { generatePreset, GUTTER } from "kapow/panel_layouts"
 import { boundingBox, translatePoints } from "kapow/panel_geometry"
 import { INK_COLORS } from "kapow/ink"
 import { defaultText } from "kapow/text"
+import { exportFilename } from "kapow/export"
+
+const SVG_NS = "http://www.w3.org/2000/svg"
+const EXPORT_MIME = "image/png"
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
 
 // New single-panel adds are dropped near page center, offset a bit further
 // each time so several adds in a row don't stack exactly on top of each
@@ -30,7 +43,8 @@ export default class extends Controller {
     "photoSubTab", "photoSubPanel",
     "photoBright", "photoContrast", "photoHue", "photoSat", "photoLook",
     "hideTextsButton", "textLayerButton",
-    "undoButton", "redoButton"
+    "undoButton", "redoButton",
+    "exportButton"
   ]
   static values = {
     format: String,
@@ -429,6 +443,233 @@ export default class extends Controller {
 
   get undoRedoTargetPageElement() {
     return this.lastMutatedPageElement || this.targetPageElement
+  }
+
+  // Per-page PNG export (see the plan's Phase 9) — rasterizes whichever
+  // page Add-panel/Undo/etc. would currently target. Multi-page PDF
+  // assembly is a later PR; this always exports just the one page.
+  exportPage() {
+    const pageEl = this.targetPageElement
+    if (!pageEl) return
+
+    // A clean, non-editing snapshot — otherwise resize handles, tail
+    // handles, floating bars, and dashed selection outlines would bake
+    // into the exported image. Mirrors exactly what switchMode already
+    // does when leaving a mode, just triggered by Export instead.
+    this.panelControllerFor(pageEl)?.deselect()
+    this.panelControllerFor(pageEl)?.exitFocus()
+    this.textControllerFor(pageEl)?.deselect()
+
+    if (this.hasExportButtonTarget) this.exportButtonTarget.disabled = true
+
+    this.renderPageToBlob(pageEl)
+      .then((blob) => this.downloadBlob(blob, exportFilename(this.projectNameText, this.pageNameText(pageEl))))
+      .catch((error) => {
+        console.error("Kapow: export failed", error)
+        alert("Sorry, exporting this page failed. Please try again.")
+      })
+      .finally(() => {
+        if (this.hasExportButtonTarget) this.exportButtonTarget.disabled = false
+      })
+  }
+
+  get projectNameText() {
+    return this.element.querySelector(".editor-project-name")?.textContent
+  }
+
+  pageNameText(pageEl) {
+    return pageEl.querySelector(".page-label")?.textContent
+  }
+
+  // Builds a standalone SVG combining the page's own SVG content (panels/
+  // ink/photos) with its HTML text overlay (Speech/Caption/etc. — kept as
+  // HTML rather than SVG for the reasons text_controller.js documents)
+  // via a <foreignObject>, so the whole page can be rasterized as one
+  // flat image below. A <canvas> can't draw arbitrary HTML directly,
+  // which is what makes this combining step necessary in the first place.
+  //
+  // This only has to render correctly once, statically — not
+  // interactively — so foreignObject's known Safari contenteditable/caret
+  // bugs (the reason the live editor avoids it) don't apply here.
+  //
+  // Async: each photo's own bytes get fetched and inlined as a data: URI
+  // (see inlinePhotoImages) before this resolves, rather than leaving its
+  // original URL in place for the browser to fetch later while
+  // rasterizing — see inlinePhotoImages' own comment for why that
+  // matters.
+  async buildExportSvgMarkup(pageEl) {
+    const svg = pageEl.querySelector("svg.page-canvas")
+    const textLayer = pageEl.querySelector(".page-text-layer")
+    const { width, height } = this.pageDimensions(pageEl)
+
+    const exportSvg = svg.cloneNode(true)
+    exportSvg.setAttribute("width", width)
+    exportSvg.setAttribute("height", height)
+    exportSvg.setAttribute("xmlns", SVG_NS)
+
+    // Every same-origin stylesheet's actual rules, inlined — a standalone
+    // serialized SVG doesn't automatically inherit the host page's <link>
+    // stylesheets, so without this neither the panel outline/background
+    // classes nor any of the text boxes' kind-specific styling (fonts,
+    // colors, the speech/shout/think shapes' fill/stroke, SFX's
+    // ink-outline text...) would render.
+    const style = document.createElementNS(SVG_NS, "style")
+    style.textContent = await this.inlineCssFontUrls(this.collectStylesheetText())
+    exportSvg.insertBefore(style, exportSvg.firstChild)
+
+    await this.inlinePhotoImages(exportSvg)
+
+    const textClone = textLayer.cloneNode(true)
+    // The live layer's own transform maps page units into the SVG's
+    // actual on-screen CSS pixel size (see text_controller.js#
+    // updateTransform) — inside this foreignObject, already sized in the
+    // same page-unit coordinate space as the rest of the SVG, that
+    // transform would double-apply and throw every text box's position
+    // off. Its children's own inline left/top/width/height are already
+    // in plain page units, needing no transform of their own here.
+    textClone.style.transform = "none"
+    textClone.hidden = false // Layout mode's "Hide text" may have this hidden
+
+    const foreignObject = document.createElementNS(SVG_NS, "foreignObject")
+    foreignObject.setAttribute("x", "0")
+    foreignObject.setAttribute("y", "0")
+    foreignObject.setAttribute("width", String(width))
+    foreignObject.setAttribute("height", String(height))
+    foreignObject.appendChild(textClone)
+    exportSvg.appendChild(foreignObject)
+
+    return new XMLSerializer().serializeToString(exportSvg)
+  }
+
+  // Fetches each photo <image>'s own bytes and replaces its href with a
+  // data: URI holding them, rather than leaving the original blob-
+  // redirect URL in place for the browser to fetch once rasterization
+  // starts. That turned out to be necessary, not just tidy: the outer
+  // SVG's own "loaded" event (see renderPageToBlob) fires once the SVG
+  // document itself is parsed, with no guarantee every nested <image>'s
+  // own separate network fetch has *also* finished by then — in testing,
+  // photos were silently missing from the exported PNG even though the
+  // same URL loaded instantly on its own, a classic race rather than a
+  // permissions problem. Inlining the bytes upfront means there's no
+  // further fetch left for that race to lose.
+  //
+  // This fetch is itself the thing that actually needs CORS (a plain
+  // <img crossorigin> attribute doesn't help once the image is inlined
+  // as a data: URI) — see the plan's own note that this needs S3's
+  // bucket to be CORS-enabled (PR15) once photos live there in
+  // production; same-origin dev/test photos need no such thing.
+  async inlinePhotoImages(exportSvg) {
+    const images = Array.from(exportSvg.querySelectorAll("image"))
+
+    await Promise.all(images.map(async (image) => {
+      const href = image.getAttribute("href")
+      if (!href) return
+
+      const absoluteHref = new URL(href, window.location.href).href
+
+      try {
+        const response = await fetch(absoluteHref, { mode: "cors" })
+        if (!response.ok) throw new Error(`photo fetch failed with status ${response.status}`)
+        const blob = await response.blob()
+        image.setAttribute("href", await blobToDataUrl(blob))
+      } catch (error) {
+        console.error("Kapow: failed to inline a photo for export, leaving it as a plain (best-effort) URL", error)
+        // Falls back to the plain absolute URL — imperfect (still subject
+        // to the race/CORS issues above), but better than aborting the
+        // whole export over one photo.
+        image.setAttribute("href", absoluteHref)
+        image.setAttribute("crossorigin", "anonymous")
+      }
+    }))
+  }
+
+  collectStylesheetText() {
+    const cssText = Array.from(document.styleSheets)
+      .map((sheet) => {
+        try {
+          return Array.from(sheet.cssRules).map((rule) => rule.cssText).join("\n")
+        } catch {
+          // Only reachable for a cross-origin stylesheet, which this app
+          // doesn't have (fonts are self-hosted, not a Google Fonts
+          // <link> — see the plan's Phase 1 branding PR).
+          return ""
+        }
+      })
+      .join("\n")
+
+    // The vendored fonts' own @font-face rules point at root-relative
+    // URLs (e.g. url("/assets/bangers-regular-<digest>.woff2")) — like
+    // photoUrl()'s href (see inlinePhotoImages), these can't resolve once
+    // this whole stylesheet is embedded in an SVG loaded from a data:
+    // URI, which has no meaningful base URL of its own. Without this,
+    // Comic Neue/Bangers/etc. silently fail to load and every text box
+    // falls back to a generic font instead.
+    return cssText.replace(/url\((['"]?)([^'")]+)\1\)/g, (match, quote, url) => {
+      if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(url)) return match // already absolute
+      return `url(${quote}${new URL(url, window.location.href).href}${quote})`
+    })
+  }
+
+  // Replaces every http(s) url(...) reference in the collected stylesheet
+  // text (in practice, just the vendored fonts' own @font-face src) with
+  // a data: URI holding the actual font bytes — the same "inline it,
+  // don't leave it as a URL for the browser to fetch later" fix as
+  // inlinePhotoImages, and for the same underlying reason: the outer
+  // SVG's own load event doesn't wait for @font-face resources referenced
+  // from an embedded <style> to actually finish downloading, so without
+  // this every text box in the exported image silently rendered in a
+  // fallback font instead of Comic Neue/Bangers/etc — confirmed by
+  // rendering an actual export and inspecting it, not just assumed.
+  async inlineCssFontUrls(cssText) {
+    const urls = [ ...new Set(Array.from(cssText.matchAll(/url\(['"]?(https?:\/\/[^'")]+)['"]?\)/g), (m) => m[1])) ]
+
+    const dataUrls = await Promise.all(urls.map(async (url) => {
+      try {
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`font fetch failed with status ${response.status}`)
+        return [ url, await blobToDataUrl(await response.blob()) ]
+      } catch (error) {
+        console.error(`Kapow: failed to inline font asset ${url} for export, leaving it as a plain URL`, error)
+        return [ url, null ]
+      }
+    }))
+
+    let result = cssText
+    for (const [ url, dataUrl ] of dataUrls) {
+      if (dataUrl) result = result.split(url).join(dataUrl)
+    }
+    return result
+  }
+
+  async renderPageToBlob(pageEl) {
+    const { width, height } = this.pageDimensions(pageEl)
+    const svgMarkup = await this.buildExportSvgMarkup(pageEl)
+    const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`
+
+    return new Promise((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => {
+        const canvas = document.createElement("canvas")
+        canvas.width = width
+        canvas.height = height
+        canvas.getContext("2d").drawImage(image, 0, 0, width, height)
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob)
+          else reject(new Error("canvas.toBlob returned null"))
+        }, EXPORT_MIME)
+      }
+      image.onerror = () => reject(new Error("Failed to load the page's SVG for export"))
+      image.src = dataUrl
+    })
+  }
+
+  downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   hideEmptyHint() {
