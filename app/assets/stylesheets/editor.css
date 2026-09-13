@@ -319,25 +319,67 @@
   border-radius: 50%;
 }
 
-/* The classic "half-hidden square" speech-bubble tail: a small white
-   diamond straddling the ellipse's own bottom edge, with only its
-   bottom-right two sides bordered so it reads as a single continuous
-   outline poking out below the bubble. Fixed in place for this PR — a
-   draggable tail (following the stored tail:[x,y] point) is the doc's
-   "Letter floating bar + tail dragging" PR. */
-.text-box--speech::after {
-  content: "";
+/* The pointed tail (Speech only, for now): a triangle from a fixed notch
+   on the box's own bottom edge to wherever its draggable dot (see
+   .text-tail-handle) currently is — see text_controller.js#renderTailShape
+   and kapow/text.js#tailTriangle. Rendered as its own small SVG rather
+   than a CSS border-trick triangle, since (unlike PR20's original static
+   version) it now has to point in an arbitrary, user-dragged direction. */
+.text-tail-shape {
   position: absolute;
-  left: 50%;
-  bottom: -10px;
-  width: 24px;
-  height: 24px;
-  margin-left: -12px;
-  background: #fff;
-  border-right: 3px solid var(--color-ink);
-  border-bottom: 3px solid var(--color-ink);
-  transform: rotate(45deg);
-  z-index: -1;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.text-tail-shape polygon {
+  fill: #fff;
+  stroke: var(--color-ink);
+  stroke-width: 3;
+}
+
+.text-tail-handle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  margin-top: -9px;
+  background: var(--color-accent);
+  border: 2px solid var(--color-ink);
+  border-radius: 50%;
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.text-floating-bar {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transform: translateX(-50%);
+}
+
+.text-floating-bar-row {
+  display: flex;
+  gap: 8px;
+}
+
+.text-floating-bar .floating-bar-button {
+  min-width: 44px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 2.5px solid var(--color-ink);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-weight: 800;
+  font-size: 1.1rem;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.text-floating-bar .floating-bar-button--active {
+  background: var(--color-accent);
+  color: var(--color-ink);
 }
 
 .text-box--caption {

@@ -5,9 +5,17 @@ import assert from "node:assert/strict"
 import {
   MIN_TEXT_WIDTH,
   MIN_TEXT_HEIGHT,
+  MIN_FONT_SIZE,
+  MAX_FONT_SIZE,
+  FONT_SIZE_STEP,
+  ROTATE_STEP_DEG,
+  FONT_CHOICES,
   clampTextWidth,
   clampTextHeight,
   resizedSize,
+  clampFontSize,
+  rotateStep,
+  tailTriangle,
   defaultText,
   fontFamilyCss
 } from "../../app/javascript/kapow/text.js"
@@ -70,4 +78,41 @@ test("fontFamilyCss maps the doc's 4 font choices to their CSS stacks", () => {
 test("fontFamilyCss falls back to the comic stack for an unknown/missing font", () => {
   assert.equal(fontFamilyCss(undefined), fontFamilyCss("comic"))
   assert.equal(fontFamilyCss("nonsense"), fontFamilyCss("comic"))
+})
+
+test("clampFontSize clamps to the min/max font size", () => {
+  assert.equal(clampFontSize(2), MIN_FONT_SIZE)
+  assert.equal(clampFontSize(200), MAX_FONT_SIZE)
+  assert.equal(clampFontSize(30), 30)
+})
+
+test("FONT_SIZE_STEP is a sane, nonzero A-/A+ increment", () => {
+  assert.ok(FONT_SIZE_STEP > 0)
+})
+
+test("rotateStep steps by the doc's 8-degree increment in either direction", () => {
+  assert.equal(rotateStep(0, 1), ROTATE_STEP_DEG)
+  assert.equal(rotateStep(ROTATE_STEP_DEG, -1), 0)
+})
+
+test("rotateStep normalizes into [0, 360) rather than growing/going negative without bound", () => {
+  assert.equal(rotateStep(356, 1), (356 + ROTATE_STEP_DEG) % 360)
+  assert.equal(rotateStep(0, -1), 360 - ROTATE_STEP_DEG)
+})
+
+test("FONT_CHOICES lists the doc's 4 lettering fonts", () => {
+  assert.deepEqual(FONT_CHOICES, [ "comic", "loud", "print", "serif" ])
+})
+
+test("tailTriangle anchors its base to the box's bottom-center and its tip to the stored tail point", () => {
+  const text = { x: 100, y: 50, w: 200, h: 120, tail: [ 400, 500 ] }
+  assert.deepEqual(tailTriangle(text), [
+    [ 100 + 100 - 16, 50 + 120 ],
+    [ 100 + 100 + 16, 50 + 120 ],
+    [ 400, 500 ]
+  ])
+})
+
+test("tailTriangle returns null when the element has no tail", () => {
+  assert.equal(tailTriangle({ x: 0, y: 0, w: 10, h: 10, tail: null }), null)
 })

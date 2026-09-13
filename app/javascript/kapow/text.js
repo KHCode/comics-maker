@@ -6,10 +6,10 @@
 //
 // This PR covers only the three "box-shaped" kinds (Speech/Caption/
 // Narration) per the plan's own phase split — Shout/SFX/Think are a later
-// PR. `rot`/`color` are stored (matching the full schema) but always their
-// neutral default here — there's no UI to change them until the Letter
-// floating bar lands in a later PR, same pattern as photo.js's
-// bright/contrast/hue/sat fields before the Adjust tab existed.
+// PR. `color` is stored (matching the full schema) but always its neutral
+// default here — SFX is the only kind that ever sets it (a later PR), same
+// pattern as photo.js's bright/contrast/hue/sat fields before the Adjust
+// tab existed.
 
 export const TEXT_KINDS = [ "speech", "caption", "narration" ]
 
@@ -29,6 +29,52 @@ export function clampTextHeight(h) {
 // (x/y never change), clamped to a sane minimum either axis.
 export function resizedSize(originalW, originalH, dx, dy) {
   return { w: clampTextWidth(originalW + dx), h: clampTextHeight(originalH + dy) }
+}
+
+// Floating bar's A-/A+ font-size step and clamp range.
+export const MIN_FONT_SIZE = 10
+export const MAX_FONT_SIZE = 72
+export const FONT_SIZE_STEP = 4
+
+export function clampFontSize(fs) {
+  return Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, fs))
+}
+
+// Floating bar's rotate buttons step in fixed 8° increments (see the
+// doc), with no min/max — a full, repeatable rotation, unlike photo's
+// bounded +/-45°. Normalized into [0, 360) after each step just so the
+// stored number doesn't grow without bound across many clicks.
+export const ROTATE_STEP_DEG = 8
+
+export function rotateStep(rot, direction) {
+  const stepped = rot + direction * ROTATE_STEP_DEG
+  return ((stepped % 360) + 360) % 360
+}
+
+// The doc's 4 lettering font choices, in the order the floating bar's
+// type row presents them.
+export const FONT_CHOICES = [ "comic", "loud", "print", "serif" ]
+
+// The pointed tail's triangle (Speech only, for now — Think/Shout are a
+// later PR): a fixed-width notch on the box's own bottom edge as its base,
+// aimed at wherever the draggable tail dot (text.tail) currently is. The
+// base stays anchored to the box rather than also following an arbitrary
+// drag target, keeping the tail visually attached to the bubble it
+// belongs to regardless of how far its tip has been dragged.
+const TAIL_BASE_HALF_WIDTH = 16
+
+export function tailTriangle(text) {
+  if (!text.tail) return null
+
+  const baseY = text.y + text.h
+  const baseCenterX = text.x + text.w / 2
+  const [ tx, ty ] = text.tail
+
+  return [
+    [ baseCenterX - TAIL_BASE_HALF_WIDTH, baseY ],
+    [ baseCenterX + TAIL_BASE_HALF_WIDTH, baseY ],
+    [ tx, ty ]
+  ]
 }
 
 // Per-kind rendering defaults (see the doc's Letter-mode table): font
@@ -56,9 +102,9 @@ function generateId() {
 }
 
 // A freshly dropped text element of the given kind, centered on (x, y).
-// Speech's tail is a fixed point straight below the box — dragging it
-// elsewhere is the doc's "Letter floating bar + tail dragging" PR; until
-// then this just gives Speech bubbles a sensible-looking default.
+// Speech's tail starts as a fixed point straight below the box — a
+// sensible-looking default until the user drags its handle elsewhere (see
+// text_controller.js#startTailDrag).
 export function defaultText(kind, x, y) {
   const { font, bold, italic, w, h } = KIND_DEFAULTS[kind]
 

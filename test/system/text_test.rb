@@ -189,4 +189,138 @@ class TextTest < ApplicationSystemTestCase
     assert_equal before["x"], after["x"]
     assert_equal before["y"], after["y"]
   end
+
+  test "selecting a text box shows its floating bar; deselecting hides it" do
+    user = User.create!(name: "Letterer", email: "letter7@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Caption")
+
+    assert_no_selector ".text-floating-bar"
+
+    text_box("caption").click
+    assert_selector ".text-floating-bar"
+
+    text_box("caption").click
+    assert_no_selector ".text-floating-bar"
+  end
+
+  test "the floating bar's A-/A+ buttons change the font size, clamped to the min/max" do
+    user = User.create!(name: "Letterer", email: "letter8@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Caption")
+    text_box("caption").click
+
+    before_fs = stored_texts.first["fs"]
+    within(".text-floating-bar") { click_button "A+" }
+    assert_equal before_fs + 4, stored_texts.first["fs"]
+
+    within(".text-floating-bar") { click_button "A−" }
+    within(".text-floating-bar") { click_button "A−" }
+    assert_equal before_fs - 4, stored_texts.first["fs"]
+  end
+
+  test "the floating bar's rotate buttons step by 8 degrees in either direction" do
+    user = User.create!(name: "Letterer", email: "letter9@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Caption")
+    text_box("caption").click
+
+    within(".text-floating-bar") { click_button "↻" }
+    assert_equal 8, stored_texts.first["rot"]
+
+    within(".text-floating-bar") { click_button "↺" }
+    assert_equal 0, stored_texts.first["rot"]
+  end
+
+  test "the floating bar's font/bold/italic buttons update the text's styling" do
+    user = User.create!(name: "Letterer", email: "letter10@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Caption")
+    text_box("caption").click
+
+    within(".text-floating-bar") { click_button "Loud" }
+    assert_equal "loud", stored_texts.first["font"]
+
+    within(".text-floating-bar") { click_button "B" } # bold starts true (Caption's default) — toggles off
+    assert_equal false, stored_texts.first["bold"]
+
+    within(".text-floating-bar") { click_button "I" }
+    assert_equal true, stored_texts.first["italic"]
+  end
+
+  test "the floating bar's delete button removes the text" do
+    user = User.create!(name: "Letterer", email: "letter11@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Caption")
+    text_box("caption").click
+
+    within(".text-floating-bar") { click_button "🗑" }
+
+    assert_equal 0, stored_texts.length
+    assert_no_selector ".text-box--caption"
+    assert_no_selector ".text-floating-bar"
+  end
+
+  test "pressing Delete/Backspace with a text selected deletes it, but not while editing its text" do
+    user = User.create!(name: "Letterer", email: "letter12@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Caption")
+
+    # While editing, Backspace should edit the text, not delete the box.
+    find(".text-box--caption .text-box-content").double_click
+    find(".text-box--caption .text-box-content").send_keys("x")
+    find(".text-box--caption .text-box-content").send_keys(:backspace)
+    find("body").click # blur, committing whatever's left
+    assert_equal 1, stored_texts.length
+
+    # Editing already left the box selected (see text_controller.js#
+    # startEditing) — no extra click needed, and clicking again here would
+    # just toggle selection back off.
+    page.driver.browser.action.send_keys(:delete).perform
+    assert_equal 0, stored_texts.length
+  end
+
+  test "dragging a speech bubble's tail handle moves its tail point" do
+    user = User.create!(name: "Letterer", email: "letter13@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Speech")
+    text_box("speech").click
+
+    assert_selector ".text-tail-handle"
+    before = stored_texts.first["tail"]
+
+    drag_element_by(find(".text-tail-handle"), 60, 40)
+    after = stored_texts.first["tail"]
+
+    assert after[0] > before[0]
+    assert after[1] > before[1]
+  end
 end
