@@ -29,7 +29,8 @@ export default class extends Controller {
     "photoScale", "photoRotate", "photoFlip", "photoCover",
     "photoSubTab", "photoSubPanel",
     "photoBright", "photoContrast", "photoHue", "photoSat", "photoLook",
-    "hideTextsButton", "textLayerButton"
+    "hideTextsButton", "textLayerButton",
+    "undoButton", "redoButton"
   ]
   static values = {
     format: String,
@@ -44,6 +45,12 @@ export default class extends Controller {
 
   connect() {
     this.activePageElement = null
+    // Undo/redo (see undo/redo below) act on whichever page's store was
+    // most recently mutated, not merely the most recently clicked one
+    // (see targetPageElement/activePageElement above) — those can differ,
+    // e.g. after editing page 2 and then just tapping over to page 1
+    // without changing anything there.
+    this.lastMutatedPageElement = null
     this.textsHidden = false
     this.markActivePage(this.newestPageElement)
     this.updateDrawToolUI()
@@ -53,6 +60,7 @@ export default class extends Controller {
     this.updatePhotoSubTabUI()
     this.syncPhotoControls()
     this.syncTextLayerButton()
+    this.syncUndoRedoButtons()
   }
 
   switchMode(event) {
@@ -394,6 +402,33 @@ export default class extends Controller {
 
   get selectedTextController() {
     return this.pageTargets.map((pageEl) => this.textControllerFor(pageEl)).find((tc) => tc?.selectedTextId)
+  }
+
+  // Every page's document-store dispatches this on every mutation
+  // (including undo()/redo() themselves — see kapow/document_store.js),
+  // so this both tracks which page undo/redo should act on next and keeps
+  // the header buttons' enabled state in sync as history grows/shrinks.
+  handleDocumentChange(event) {
+    this.lastMutatedPageElement = event.target
+    this.syncUndoRedoButtons()
+  }
+
+  undo() {
+    this.documentStoreControllerFor(this.undoRedoTargetPageElement)?.store.undo()
+  }
+
+  redo() {
+    this.documentStoreControllerFor(this.undoRedoTargetPageElement)?.store.redo()
+  }
+
+  syncUndoRedoButtons() {
+    const store = this.documentStoreControllerFor(this.undoRedoTargetPageElement)?.store
+    if (this.hasUndoButtonTarget) this.undoButtonTarget.disabled = !store?.canUndo
+    if (this.hasRedoButtonTarget) this.redoButtonTarget.disabled = !store?.canRedo
+  }
+
+  get undoRedoTargetPageElement() {
+    return this.lastMutatedPageElement || this.targetPageElement
   }
 
   hideEmptyHint() {

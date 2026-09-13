@@ -818,12 +818,18 @@ export default class extends Controller {
     })
   }
 
+  // Scale/Rotate/Bright/Contrast/Hue/Sat are all driven by a <input
+  // type="range">, whose `input` event fires on every tick of a drag, not
+  // once per gesture like every other mutation in the app (see
+  // updateFocusedPhoto's coalesceKey) — so each passes one, scoped to
+  // this specific panel+field, letting a whole slider drag collapse into
+  // a single undo step instead of one per tick.
   setPhotoScale(pct) {
-    this.updateFocusedPhoto((photo) => ({ ...photo, pct: clampScalePct(pct) }))
+    this.updateFocusedPhoto((photo) => ({ ...photo, pct: clampScalePct(pct) }), "scale")
   }
 
   setPhotoRotate(deg) {
-    this.updateFocusedPhoto((photo) => ({ ...photo, rot: clampRotateDeg(deg) }))
+    this.updateFocusedPhoto((photo) => ({ ...photo, rot: clampRotateDeg(deg) }), "rotate")
   }
 
   flipPhoto() {
@@ -839,19 +845,19 @@ export default class extends Controller {
   // photoFilterCss), so these just update the stored numbers/enum and
   // let renderPhotoGroup re-derive the CSS filter from them.
   setPhotoBright(val) {
-    this.updateFocusedPhoto((photo) => ({ ...photo, bright: clampAdjust(val) }))
+    this.updateFocusedPhoto((photo) => ({ ...photo, bright: clampAdjust(val) }), "bright")
   }
 
   setPhotoContrast(val) {
-    this.updateFocusedPhoto((photo) => ({ ...photo, contrast: clampAdjust(val) }))
+    this.updateFocusedPhoto((photo) => ({ ...photo, contrast: clampAdjust(val) }), "contrast")
   }
 
   setPhotoHue(deg) {
-    this.updateFocusedPhoto((photo) => ({ ...photo, hue: clampHueDeg(deg) }))
+    this.updateFocusedPhoto((photo) => ({ ...photo, hue: clampHueDeg(deg) }), "hue")
   }
 
   setPhotoSat(val) {
-    this.updateFocusedPhoto((photo) => ({ ...photo, sat: clampAdjust(val) }))
+    this.updateFocusedPhoto((photo) => ({ ...photo, sat: clampAdjust(val) }), "sat")
   }
 
   setPhotoLook(look) {
@@ -862,14 +868,15 @@ export default class extends Controller {
     this.updateFocusedPhoto(() => null)
   }
 
-  updateFocusedPhoto(computeNewPhoto) {
+  updateFocusedPhoto(computeNewPhoto, coalesceField) {
     if (!this.focusedPanelId) return
     const panelId = this.focusedPanelId
+    const coalesceKey = coalesceField ? `photo-adjust:${panelId}:${coalesceField}` : undefined
 
     this.documentStoreController.store.mutate((state) => {
       const panel = state.panels.find((p) => p.id === panelId)
       if (panel?.photo) panel.photo = computeNewPhoto(panel.photo)
-    })
+    }, { coalesceKey })
   }
 
   // Photo mode's pan gesture: dragging anywhere on the (already-focused)
