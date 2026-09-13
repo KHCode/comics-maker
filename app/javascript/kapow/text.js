@@ -4,12 +4,13 @@
 // see text_controller.js for the HTML-overlay rendering and the
 // pointer-driven move/resize/edit gestures.
 //
-// Speech/Caption/Narration (the "box-shaped" kinds) and Shout/SFX (the
-// starburst/plain-display kinds) are covered here, per the plan's phase
-// split — Think (the last kind, reusing/extending this same tail
-// mechanism for its bubble-trail tail) is a later PR.
+// All 6 of the doc's Letter-mode element kinds are covered here: Speech/
+// Caption/Narration (the "box-shaped" kinds), Shout/SFX (the starburst/
+// plain-display kinds), and Think (a dotted-border ellipse reusing
+// Speech's own tail mechanism, but with a trailing-circles tail instead
+// of a seamlessly merged notch — see thinkTrailCircles).
 
-export const TEXT_KINDS = [ "speech", "caption", "narration", "shout", "sfx" ]
+export const TEXT_KINDS = [ "speech", "think", "shout", "caption", "narration", "sfx" ]
 
 export const MIN_TEXT_WIDTH = 60
 export const MIN_TEXT_HEIGHT = 40
@@ -87,19 +88,27 @@ export function tailShaftMidpoint(text) {
   return [ (bx + tx) / 2, (by + ty) / 2 ]
 }
 
-// An SVG path `d` string for the combined bubble+tail outline. Falls back
-// to a plain closed ellipse if there's no tail (shouldn't happen in
-// practice — every Speech text gets a default tail — but keeps this safe
-// to call unconditionally).
-export function speechBubblePath(text) {
+// A plain closed ellipse inscribed in the box, with no tail merged in —
+// Think's own body shape (its tail is a trail of separate circles, not a
+// merged notch — see thinkTrailCircles), and Speech's own fallback when
+// it has no tail (shouldn't happen in practice, but keeps speechBubblePath
+// safe to call unconditionally).
+export function ellipsePath(text) {
   const cx = text.x + text.w / 2
   const cy = text.y + text.h / 2
   const rx = text.w / 2
   const ry = text.h / 2
+  return `M ${cx - rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx + rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx - rx} ${cy} Z`
+}
 
-  if (!text.tail) {
-    return `M ${cx - rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx + rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx - rx} ${cy} Z`
-  }
+// An SVG path `d` string for the combined bubble+tail outline.
+export function speechBubblePath(text) {
+  if (!text.tail) return ellipsePath(text)
+
+  const cx = text.x + text.w / 2
+  const cy = text.y + text.h / 2
+  const rx = text.w / 2
+  const ry = text.h / 2
 
   const [ leftX, leftY ] = ellipsePoint(cx, cy, rx, ry, 90 + TAIL_BASE_HALF_ANGLE_DEG)
   const [ rightX, rightY ] = ellipsePoint(cx, cy, rx, ry, 90 - TAIL_BASE_HALF_ANGLE_DEG)
@@ -181,6 +190,32 @@ export function shoutStarPath(text) {
   return [ `M ${first[0]} ${first[1]}`, ...rest.map(([ x, y ]) => `L ${x} ${y}`), "Z" ].join(" ")
 }
 
+// Think's tail is a trail of separate, shrinking circles leading away
+// from the bubble — the actual real-world thought-bubble convention, not
+// something to seamlessly merge the way Speech's/Shout's tails are (see
+// speechBubblePath/shoutStarPath): distinct trailing bubbles are the
+// correct look here, not a seam to avoid. Fixed fractions along the
+// segment from the ellipse's own base (tailBaseCenter) to the tail tip,
+// each smaller than the last as it nears the tip.
+const THINK_TRAIL_STOPS = [
+  { t: 0.28, r: 16 },
+  { t: 0.55, r: 11 },
+  { t: 0.8, r: 6 }
+]
+
+export function thinkTrailCircles(text) {
+  if (!text.tail) return []
+
+  const [ bx, by ] = tailBaseCenter(text)
+  const [ tx, ty ] = text.tail
+
+  return THINK_TRAIL_STOPS.map(({ t, r }) => ({
+    cx: bx + (tx - bx) * t,
+    cy: by + (ty - by) * t,
+    r
+  }))
+}
+
 // SFX's own default rotation and color (the doc: "Loud, red #e0452d, −8°
 // rotation") — no other kind has a non-zero default rotation or sets
 // color at all, so these constants exist only for SFX's own KIND_DEFAULTS
@@ -210,6 +245,7 @@ export const SFX_COLORS = [
 // falls back to 0/null below) for every kind but SFX.
 const KIND_DEFAULTS = {
   speech: { font: "comic", bold: true, italic: false, w: 200, h: 120 },
+  think: { font: "comic", bold: true, italic: false, w: 200, h: 120 },
   caption: { font: "comic", bold: true, italic: false, w: 220, h: 70 },
   narration: { font: "comic", bold: true, italic: true, w: 220, h: 70 },
   shout: { font: "loud", bold: false, italic: false, w: 180, h: 140 },
@@ -239,8 +275,12 @@ function generateId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+// Kinds whose tail is user-draggable (see text_controller.js#
+// startTailDrag/startBothDrag) — every other kind has no tail at all.
+const TAILED_KINDS = [ "speech", "think", "shout" ]
+
 // A freshly dropped text element of the given kind, centered on (x, y).
-// Speech/Shout's tail starts as a fixed point straight below the box — a
+// A tailed kind's tail starts as a fixed point straight below the box — a
 // sensible-looking default until the user drags its handle elsewhere (see
 // text_controller.js#startTailDrag).
 export function defaultText(kind, x, y) {
@@ -256,7 +296,7 @@ export function defaultText(kind, x, y) {
     fs: DEFAULT_FONT_SIZE,
     rot,
     text: "",
-    tail: kind === "speech" || kind === "shout" ? [ x, y + h / 2 + 30 ] : null,
+    tail: TAILED_KINDS.includes(kind) ? [ x, y + h / 2 + 30 ] : null,
     font,
     bold,
     italic,

@@ -308,6 +308,7 @@
 }
 
 .text-box--speech,
+.text-box--think,
 .text-box--narration,
 .text-box--shout,
 .text-box--sfx {
@@ -315,11 +316,14 @@
   text-align: center;
 }
 
-/* Speech/Shout's own body is rendered entirely by .text-shape (a single
-   seamless SVG path — see below) behind this box, not by a CSS
-   background/border on the box itself: a body and a separately CSS-
-   bordered box would leave a visible seam wherever the tail meets it. */
+/* Speech/Shout/Think's own body is rendered entirely by .text-shape (see
+   below) behind this box, not by a CSS background/border on the box
+   itself: a body and a separately CSS-bordered box would leave a visible
+   seam wherever Speech's/Shout's tail meets it (Think's own tail is a
+   separate trailing-circles element instead — see thinkTrailCircles —
+   but its ellipse still paints behind the box the same way). */
 .text-box--speech,
+.text-box--think,
 .text-box--shout {
   background: transparent;
 }
@@ -391,6 +395,23 @@
 
 .text-shape--shout path {
   fill: var(--color-ink);
+}
+
+/* Think's dotted-border ellipse (the doc: "Dotted-border ellipse"), plus
+   its own trailing tail circles (see thinkTrailCircles) styled the same
+   way as small versions of the bubble itself. */
+.text-shape--think path {
+  fill: #fff;
+  stroke: var(--color-ink);
+  stroke-width: 3;
+  stroke-dasharray: 3 7;
+  stroke-linecap: round;
+}
+
+.text-shape--think circle {
+  fill: #fff;
+  stroke: var(--color-ink);
+  stroke-width: 2.5;
 }
 
 .text-tail-handle {

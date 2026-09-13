@@ -24,6 +24,8 @@ import {
   speechBubblePath,
   shoutStarPoints,
   shoutStarPath,
+  ellipsePath,
+  thinkTrailCircles,
   tailedShapeBounds,
   defaultText,
   fontFamilyCss
@@ -71,14 +73,19 @@ test("defaultText sets narration to bold+italic per the doc's defaults table, ca
   assert.equal(narration.italic, true)
 })
 
-test("TEXT_KINDS lists all 5 kinds covered so far, Think excluded (a later PR)", () => {
-  assert.deepEqual(TEXT_KINDS, [ "speech", "caption", "narration", "shout", "sfx" ])
+test("TEXT_KINDS lists all 6 of the doc's Letter-mode kinds", () => {
+  assert.deepEqual(TEXT_KINDS, [ "speech", "think", "shout", "caption", "narration", "sfx" ])
 })
 
-test("defaultText gives Shout a fixed default tail below it, like Speech", () => {
-  const text = defaultText("shout", 300, 200)
-  assert.equal(text.font, "loud")
-  assert.deepEqual(text.tail, [ 300, 200 + text.h / 2 + 30 ])
+test("defaultText gives Shout/Think a fixed default tail below it, like Speech", () => {
+  const shout = defaultText("shout", 300, 200)
+  assert.equal(shout.font, "loud")
+  assert.deepEqual(shout.tail, [ 300, 200 + shout.h / 2 + 30 ])
+
+  const think = defaultText("think", 300, 200)
+  assert.equal(think.font, "comic")
+  assert.equal(think.bold, true)
+  assert.deepEqual(think.tail, [ 300, 200 + think.h / 2 + 30 ])
 })
 
 test("defaultText sets SFX's doc-specified defaults: Loud font, red color, -8deg rotation, no tail", () => {
@@ -199,4 +206,34 @@ test("shoutStarPath draws a single closed polygon through all 20 vertices", () =
   assert.match(path, /^M .+ Z$/)
   assert.equal((path.match(/L /g) || []).length, 19)
   assert.match(path, /L 500 600/)
+})
+
+test("ellipsePath draws a plain closed ellipse with no tail notch", () => {
+  const path = ellipsePath({ x: 100, y: 50, w: 200, h: 120 })
+  assert.match(path, /^M .+ A .+ A .+ Z$/)
+})
+
+test("speechBubblePath falls back to ellipsePath when there's no tail", () => {
+  const text = { x: 100, y: 50, w: 200, h: 120, tail: null }
+  assert.equal(speechBubblePath(text), ellipsePath(text))
+})
+
+test("thinkTrailCircles places shrinking circles along the segment from the ellipse's base to the tail tip", () => {
+  const text = { x: 100, y: 50, w: 200, h: 120, tail: [ 400, 500 ] }
+  const circles = thinkTrailCircles(text)
+  assert.equal(circles.length, 3)
+
+  // Each circle sits progressively farther from the base (tailBaseCenter,
+  // [200, 170]) and closer to the tail tip, shrinking as it goes.
+  const [ bx, by ] = tailBaseCenter(text)
+  for (let i = 1; i < circles.length; i++) {
+    const distPrev = Math.hypot(circles[i - 1].cx - bx, circles[i - 1].cy - by)
+    const distCurr = Math.hypot(circles[i].cx - bx, circles[i].cy - by)
+    assert.ok(distCurr > distPrev)
+    assert.ok(circles[i].r < circles[i - 1].r)
+  }
+})
+
+test("thinkTrailCircles returns no circles when there's no tail", () => {
+  assert.deepEqual(thinkTrailCircles({ x: 0, y: 0, w: 10, h: 10, tail: null }), [])
 })

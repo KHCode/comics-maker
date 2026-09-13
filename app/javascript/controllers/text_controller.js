@@ -6,6 +6,8 @@ import {
   rotateStep,
   speechBubblePath,
   shoutStarPath,
+  ellipsePath,
+  thinkTrailCircles,
   tailedShapeBounds,
   tailShaftMidpoint,
   fontFamilyCss,
@@ -41,8 +43,8 @@ const BAR_ROW_GAP = 6
 const BAR_ESTIMATED_HEIGHT = BAR_BUTTON_SIZE * 2 + BAR_ROW_GAP
 const BAR_MARGIN_ABOVE = 12
 
-// Renders Letter mode's text elements (Speech/Caption/Narration/Shout/SFX
-// — Think is a later PR) as an HTML overlay, not SVG: see
+// Renders Letter mode's text elements (all 6 of the doc's kinds: Speech/
+// Think/Shout/Caption/Narration/SFX) as an HTML overlay, not SVG: see
 // the plan's own open question on this (foreignObject's Safari
 // contenteditable bugs). The overlay div (see the `layer` target) is
 // positioned/scaled to sit exactly over the page's own SVG canvas via a
@@ -300,19 +302,42 @@ export default class extends Controller {
     this.updateSelectionUI()
   }
 
-  // Speech's combined bubble+tail outline (kapow/text.js#speechBubblePath)
-  // or Shout's combined star+tail outline (#shoutStarPath) — a no-op for
-  // every other kind, which has no body shape of its own and renders as a
-  // plain CSS box instead (see .text-box--caption/--narration/--sfx).
-  pathDataFor(text) {
-    if (text.kind === "speech") return speechBubblePath(text)
-    if (text.kind === "shout") return shoutStarPath(text)
-    return null
+  // Whether this kind has a body shape of its own at all — Speech's
+  // combined bubble+tail outline (kapow/text.js#speechBubblePath), Shout's
+  // combined star+tail outline (#shoutStarPath), or Think's dotted ellipse
+  // plus its own separate trailing-circles tail (#ellipsePath/
+  // #thinkTrailCircles). Every other kind has none and renders as a plain
+  // CSS box instead (see .text-box--caption/--narration/--sfx).
+  hasPathShape(kind) {
+    return kind === "speech" || kind === "shout" || kind === "think"
+  }
+
+  // Appends this kind's own shape elements (a single path for Speech/
+  // Shout, or an ellipse path plus several trailing circles for Think) to
+  // the wrapper svg renderPathShape already sized/positioned.
+  appendShapeElements(svg, text) {
+    if (text.kind === "speech" || text.kind === "shout" || text.kind === "think") {
+      const pathData = text.kind === "speech" ? speechBubblePath(text)
+        : text.kind === "shout" ? shoutStarPath(text)
+        : ellipsePath(text)
+      const path = document.createElementNS(SVG_NS, "path")
+      path.setAttribute("d", pathData)
+      svg.appendChild(path)
+    }
+
+    if (text.kind === "think") {
+      thinkTrailCircles(text).forEach(({ cx, cy, r }) => {
+        const circle = document.createElementNS(SVG_NS, "circle")
+        circle.setAttribute("cx", cx)
+        circle.setAttribute("cy", cy)
+        circle.setAttribute("r", r)
+        svg.appendChild(circle)
+      })
+    }
   }
 
   renderPathShape(text) {
-    const pathData = this.pathDataFor(text)
-    if (!pathData) return
+    if (!this.hasPathShape(text.kind)) return
 
     const { minX, minY, maxX, maxY } = tailedShapeBounds(text)
     const svg = document.createElementNS(SVG_NS, "svg")
@@ -324,9 +349,7 @@ export default class extends Controller {
     svg.setAttribute("height", maxY - minY)
     svg.setAttribute("viewBox", `${minX} ${minY} ${maxX - minX} ${maxY - minY}`)
 
-    const path = document.createElementNS(SVG_NS, "path")
-    path.setAttribute("d", pathData)
-    svg.appendChild(path)
+    this.appendShapeElements(svg, text)
 
     this.layerTarget.appendChild(svg)
   }
@@ -334,18 +357,16 @@ export default class extends Controller {
   // Live-updates the shape mid-gesture (move/resize/tail-drag) by
   // recomputing it from `overrides` merged onto the text's last-known
   // state, rather than hiding it for the gesture's duration the way the
-  // small handles/floating bar are (see hideAuxiliaryElements) — a single
-  // path recompute is cheap, and seeing the shape (the visually
-  // important part) track the drag live matters more here than it did
-  // for 8 separate photo-resize handles.
+  // small handles/floating bar are (see hideAuxiliaryElements) — a full
+  // shape rebuild is cheap, and seeing it (the visually important part)
+  // track the drag live matters more here than it did for 8 separate
+  // photo-resize handles.
   updatePathShapePreview(textId, overrides) {
     const text = this.currentTexts.find((t) => t.id === textId)
-    if (!text) return
-    const merged = { ...text, ...overrides }
-    if (!this.pathDataFor(merged)) return
+    if (!text || !this.hasPathShape(text.kind)) return
 
     this.layerTarget.querySelector(`.text-shape[data-text-id="${textId}"]`)?.remove()
-    this.renderPathShape(merged)
+    this.renderPathShape({ ...text, ...overrides })
   }
 
   renderTailHandle(text) {

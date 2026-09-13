@@ -135,6 +135,47 @@ class TextTest < ApplicationSystemTestCase
     assert_selector ".text-box--sfx"
   end
 
+  test "adding Think drops it with its own per-kind defaults, distinct from Speech" do
+    user = User.create!(name: "Letterer", email: "letter25@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Think")
+
+    think = stored_texts.first
+    assert_equal "comic", think["font"]
+    assert_equal true, think["bold"]
+    refute_nil think["tail"]
+
+    assert_selector ".text-box--think"
+  end
+
+  test "a think bubble renders a dotted ellipse plus a separate trailing-circles tail, both draggable" do
+    user = User.create!(name: "Letterer", email: "letter26@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Think")
+
+    assert_selector ".text-shape--think path", count: 1
+    assert_selector ".text-shape--think circle", count: 3
+    assert_equal "rgba(0, 0, 0, 0)", text_box("think").native.css_value("background-color")
+
+    text_box("think").click
+    assert_selector ".text-tail-handle"
+
+    before = stored_texts.first["tail"]
+    drag_element_by(find(".text-tail-handle"), 40, 25)
+    after = stored_texts.first["tail"]
+
+    assert after[0] > before[0]
+    assert after[1] > before[1]
+  end
+
   test "a shout renders as one seamless starburst shape, with a draggable tail" do
     user = User.create!(name: "Letterer", email: "letter22@kapow.test", password: "password123")
     project = create_blank_project(user)
