@@ -14,3 +14,9 @@ export function sanitizeFilenameSegment(name) {
 export function exportFilename(projectName, pageName) {
   return `${sanitizeFilenameSegment(projectName)}-${sanitizeFilenameSegment(pageName)}.png`
 }
+
+// Whole-project PDF export has no per-page name to fold in (see
+// editor_controller.js#exportPdf) — it's one file for the whole comic.
+export function exportPdfFilename(projectName) {
+  return `${sanitizeFilenameSegment(projectName)}.pdf`
+}

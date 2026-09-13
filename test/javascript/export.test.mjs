@@ -2,7 +2,7 @@
 
 import test from "node:test"
 import assert from "node:assert/strict"
-import { sanitizeFilenameSegment, exportFilename } from "../../app/javascript/kapow/export.js"
+import { sanitizeFilenameSegment, exportFilename, exportPdfFilename } from "../../app/javascript/kapow/export.js"
 
 test("sanitizeFilenameSegment replaces runs of non-alphanumeric characters with a single hyphen", () => {
   assert.equal(sanitizeFilenameSegment("My Cool Comic!!"), "My-Cool-Comic")
@@ -27,4 +27,9 @@ test("exportFilename joins the sanitized project and page names with a .png exte
 
 test("exportFilename tolerates missing project/page names", () => {
   assert.equal(exportFilename(undefined, undefined), "untitled-untitled.png")
+})
+
+test("exportPdfFilename sanitizes the project name and appends .pdf", () => {
+  assert.equal(exportPdfFilename("My Comic"), "My-Comic.pdf")
+  assert.equal(exportPdfFilename(undefined), "untitled.pdf")
 })

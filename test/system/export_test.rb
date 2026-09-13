@@ -48,13 +48,15 @@ class ExportTest < ApplicationSystemTestCase
 
   # Stubs the two browser APIs export actually triggers a real download
   # through, so the test can inspect what would have been downloaded
-  # without needing headless Chrome's download directory configured.
+  # without needing headless Chrome's download directory configured. Stows
+  # the blob itself (not just its type/size) so a test can pull its actual
+  # bytes back out afterward (see pdf_export_test.rb's export_pdf_bytes).
   def stub_download_capture
     page.execute_script(<<~JS)
       window.__exportCalls = []
       const originalCreateObjectURL = URL.createObjectURL.bind(URL)
       URL.createObjectURL = (blob) => {
-        window.__exportCalls.push({ type: blob.type, size: blob.size })
+        window.__exportCalls.push({ type: blob.type, size: blob.size, blob })
         return originalCreateObjectURL(blob)
       }
       HTMLAnchorElement.prototype.click = function () {

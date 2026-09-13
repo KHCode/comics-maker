@@ -4,10 +4,16 @@ import { generatePreset, GUTTER } from "kapow/panel_layouts"
 import { boundingBox, translatePoints } from "kapow/panel_geometry"
 import { INK_COLORS } from "kapow/ink"
 import { defaultText } from "kapow/text"
-import { exportFilename } from "kapow/export"
+import { exportFilename, exportPdfFilename } from "kapow/export"
+import { buildPdfBytes } from "kapow/pdf"
 
 const SVG_NS = "http://www.w3.org/2000/svg"
 const EXPORT_MIME = "image/png"
+// The PDF export path rasterizes each page as JPEG instead (see
+// renderPageToBlob/exportPdf) so its bytes can be embedded directly via
+// /DCTDecode — see kapow/pdf.js's own header comment for why.
+const EXPORT_PDF_PAGE_MIME = "image/jpeg"
+const EXPORT_PDF_PAGE_QUALITY = 0.92
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
@@ -44,7 +50,7 @@ export default class extends Controller {
     "photoBright", "photoContrast", "photoHue", "photoSat", "photoLook",
     "hideTextsButton", "textLayerButton",
     "undoButton", "redoButton",
-    "exportButton"
+    "exportButton", "exportPdfButton"
   ]
   static values = {
     format: String,
@@ -446,8 +452,8 @@ export default class extends Controller {
   }
 
   // Per-page PNG export (see the plan's Phase 9) — rasterizes whichever
-  // page Add-panel/Undo/etc. would currently target. Multi-page PDF
-  // assembly is a later PR; this always exports just the one page.
+  // page Add-panel/Undo/etc. would currently target. See exportPdf below
+  // for the whole-project, every-page PDF export.
   exportPage() {
     const pageEl = this.targetPageElement
     if (!pageEl) return
@@ -470,6 +476,45 @@ export default class extends Controller {
       })
       .finally(() => {
         if (this.hasExportButtonTarget) this.exportButtonTarget.disabled = false
+      })
+  }
+
+  // Whole-project PDF export (see the plan's Phase 9) — every page, in page
+  // order, assembled into one PDF file. Reuses exportPage's own per-page
+  // rasterization pipeline (buildExportSvgMarkup/inlinePhotoImages/
+  // inlineCssFontUrls all apply just the same to each page in turn) rather
+  // than duplicating it; only the final "one PNG download" step differs.
+  exportPdf() {
+    if (!this.pageTargets.length) return
+
+    this.pageTargets.forEach((pageEl) => {
+      this.panelControllerFor(pageEl)?.deselect()
+      this.panelControllerFor(pageEl)?.exitFocus()
+      this.textControllerFor(pageEl)?.deselect()
+    })
+
+    if (this.hasExportPdfButtonTarget) this.exportPdfButtonTarget.disabled = true
+
+    Promise.all(this.pageTargets.map(async (pageEl) => {
+      const { width, height } = this.pageDimensions(pageEl)
+      const blob = await this.renderPageToBlob(pageEl, {
+        mimeType: EXPORT_PDF_PAGE_MIME,
+        quality: EXPORT_PDF_PAGE_QUALITY
+      })
+      const jpegBytes = new Uint8Array(await blob.arrayBuffer())
+      return { jpegBytes, width, height }
+    }))
+      .then((pages) => {
+        const pdfBytes = buildPdfBytes(pages)
+        const blob = new Blob([ pdfBytes ], { type: "application/pdf" })
+        this.downloadBlob(blob, exportPdfFilename(this.projectNameText))
+      })
+      .catch((error) => {
+        console.error("Kapow: PDF export failed", error)
+        alert("Sorry, exporting this comic failed. Please try again.")
+      })
+      .finally(() => {
+        if (this.hasExportPdfButtonTarget) this.exportPdfButtonTarget.disabled = false
       })
   }
 
@@ -650,7 +695,11 @@ export default class extends Controller {
     return result
   }
 
-  async renderPageToBlob(pageEl) {
+  // mimeType/quality let exportPdf reuse this for JPEG-encoded pages (see
+  // EXPORT_PDF_PAGE_MIME) instead of PNG export's default; both need the
+  // exact same SVG-building/rasterization steps ahead of that, just a
+  // different final canvas.toBlob encoding.
+  async renderPageToBlob(pageEl, { mimeType = EXPORT_MIME, quality } = {}) {
     const { width, height } = this.pageDimensions(pageEl)
     const svgMarkup = await this.buildExportSvgMarkup(pageEl)
     const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`
@@ -666,14 +715,15 @@ export default class extends Controller {
         // used to come for free from .page-canvas's own CSS background —
         // now stripped from the exported SVG along with its border (see
         // buildExportSvgMarkup), so it needs to be filled in explicitly
-        // instead of leaving a transparent PNG background.
+        // instead of leaving a transparent PNG background. JPEG has no
+        // alpha channel at all, so this matters even more there.
         ctx.fillStyle = "#fff"
         ctx.fillRect(0, 0, width, height)
         ctx.drawImage(image, 0, 0, width, height)
         canvas.toBlob((blob) => {
           if (blob) resolve(blob)
           else reject(new Error("canvas.toBlob returned null"))
-        }, EXPORT_MIME)
+        }, mimeType, quality)
       }
       image.onerror = () => reject(new Error("Failed to load the page's SVG for export"))
       image.src = dataUrl
