@@ -309,29 +309,35 @@
 
 .text-box--speech,
 .text-box--narration {
-  background: #fff;
-  border: 3px solid var(--color-ink);
   justify-content: center;
   text-align: center;
 }
 
+/* Speech's own bubble is rendered entirely by .text-speech-shape (a
+   single seamless SVG path — see below) behind this box, not by a CSS
+   background/border on the box itself: a bubble and a separately CSS-
+   bordered box would leave a visible seam wherever the tail meets it. */
 .text-box--speech {
-  border-radius: 50%;
+  background: transparent;
 }
 
-/* The pointed tail (Speech only, for now): a triangle from a fixed notch
-   on the box's own bottom edge to wherever its draggable dot (see
-   .text-tail-handle) currently is — see text_controller.js#renderTailShape
-   and kapow/text.js#tailTriangle. Rendered as its own small SVG rather
-   than a CSS border-trick triangle, since (unlike PR20's original static
-   version) it now has to point in an arbitrary, user-dragged direction. */
-.text-tail-shape {
+.text-box--narration {
+  background: #fff;
+  border: 3px solid var(--color-ink);
+}
+
+/* Speech's combined bubble+tail outline — one continuous SVG path (see
+   kapow/text.js#speechBubblePath), so there's no seam between the bubble
+   and its tail the way a separately bordered ellipse+triangle would have.
+   Sits behind the box (see text_controller.js#renderAll's render order),
+   which is why the box itself has no background/border of its own. */
+.text-speech-shape {
   position: absolute;
   overflow: visible;
   pointer-events: none;
 }
 
-.text-tail-shape polygon {
+.text-speech-shape path {
   fill: #fff;
   stroke: var(--color-ink);
   stroke-width: 3;
@@ -348,6 +354,42 @@
   border-radius: 50%;
   cursor: grab;
   pointer-events: auto;
+}
+
+/* The "move both together" handle (see text_controller.js#startBothDrag)
+   — a diamond partway along the tail's own shaft, deliberately distinct
+   from the round tail-tip dot (tail only) and the square resize handle
+   (bubble corner). */
+.text-tail-shaft-handle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  margin-top: -8px;
+  background: var(--color-surface-raised);
+  border: 2px solid var(--color-ink);
+  transform: rotate(45deg);
+  cursor: move;
+  pointer-events: auto;
+}
+
+/* Selecting a text no longer opens its floating bar automatically (see
+   the feedback this was built from) — this small icon on the selected
+   box is what shows/hides it (see text_controller.js#toggleFloatingBar).
+   Opposite corner from the resize handle so the two don't collide. */
+.text-bar-toggle {
+  position: absolute;
+  left: -8px;
+  top: -8px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--color-surface-raised);
+  border: 2px solid var(--color-ink);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
 }
 
 .text-floating-bar {
@@ -492,15 +534,37 @@
   padding: 0.75rem 1rem;
 }
 
-.tray-section {
+/* Shared by every level that groups a tray's controls (the tray itself,
+   Draw's Ink/Photo sub-panels, Photo's Fit/Adjust sub-panels): all of it
+   flows and wraps together as one pool of controls, filling a row across
+   the available width before starting a new line, rather than each
+   .tray-section being forced onto its own line regardless of how much
+   room is left on the current one. */
+/* :not([hidden]) on every selector here for the same reason as
+   .tray-section below — each of these is also toggled via the `hidden`
+   attribute (mode trays, Ink/Photo sub-panels, Fit/Adjust sub-panels),
+   and an unguarded `display: flex` here (ordinary author CSS) would
+   override the browser's own lower-priority `[hidden] { display: none }`
+   rule and show them all at once regardless of which one is actually
+   active. */
+.contextual-tray:not([hidden]),
+.draw-layer-panel:not([hidden]),
+.tray-flow:not([hidden]) {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
 }
 
-.tray-section + .tray-section {
-  margin-top: 0.5rem;
+/* Dissolves the section's own box so its label+buttons become direct
+   flex items of whichever ancestor above they're flowing within, instead
+   of a block that always starts a new line. The [hidden] exception
+   matters: without it, this rule's own `display: contents` (an ordinary
+   author-stylesheet declaration) would beat the lower-priority
+   UA `[hidden] { display: none }` rule and silently un-hide a
+   `hidden`-toggled section (e.g. the Photo tab's Insert/Fit panels). */
+.tray-section:not([hidden]) {
+  display: contents;
 }
 
 .tray-label {

@@ -4,7 +4,9 @@ import {
   clampTextHeight,
   clampFontSize,
   rotateStep,
-  tailTriangle,
+  speechBubblePath,
+  speechShapeBounds,
+  tailShaftMidpoint,
   fontFamilyCss,
   FONT_SIZE_STEP,
   FONT_CHOICES
@@ -37,8 +39,6 @@ const BAR_ROW_GAP = 6
 const BAR_ESTIMATED_HEIGHT = BAR_BUTTON_SIZE * 2 + BAR_ROW_GAP
 const BAR_MARGIN_ABOVE = 12
 
-const TAIL_HANDLE_SIZE = 18
-
 // Renders Letter mode's text elements (Speech/Caption/Narration in this
 // PR — Shout/SFX/Think are a later PR) as an HTML overlay, not SVG: see
 // the plan's own open question on this (foreignObject's Safari
@@ -65,6 +65,17 @@ export default class extends Controller {
 
     this.selectedTextId = null
     this.editingTextId = null
+    // Whether the floating bar is currently open for the selected text —
+    // starts (and resets to) false: it's opened explicitly via the small
+    // toggle icon on the selected box (see renderSelectionControls),
+    // rather than automatically whenever something is selected.
+    this.floatingBarVisible = false
+    // Two independent reasons the whole layer can be hidden — Draw mode's
+    // panel-zoom (see hide/show) and Layout mode's own "see the panels
+    // plainly" toggle (see setForceHidden) — tracked separately so one
+    // doesn't clobber the other (see updateLayerVisibility).
+    this.focusHidden = false
+    this.forceHidden = false
     this.scaleX = 1
     this.scaleY = 1
 
@@ -79,6 +90,19 @@ export default class extends Controller {
     this.boundHandleKeydown = this.handleKeydown.bind(this)
     document.addEventListener("keydown", this.boundHandleKeydown)
 
+    // Capture phase (the `true` below), not bubble: a panel sitting under
+    // a text element stops propagation as the very first thing its own
+    // pointerdown handler does (see panel_controller.js#
+    // handlePanelPointerDown), so a bubble-phase listener here would
+    // never even see a click that lands on a panel underneath a text box
+    // — which was the bug this fixes (deselecting text required clicking
+    // truly empty page background, not just "anywhere outside the text").
+    // Capture listeners run top-down before any descendant gets a chance
+    // to stop propagation, so this always sees the click regardless of
+    // what's underneath it.
+    this.boundHandlePointerDownCapture = this.handlePointerDownCapture.bind(this)
+    this.element.addEventListener("pointerdown", this.boundHandlePointerDownCapture, true)
+
     this.updateTransform()
     this.renderAll(this.currentTexts)
   }
@@ -86,6 +110,19 @@ export default class extends Controller {
   disconnect() {
     this.resizeObserver?.disconnect()
     document.removeEventListener("keydown", this.boundHandleKeydown)
+    this.element.removeEventListener("pointerdown", this.boundHandlePointerDownCapture, true)
+  }
+
+  // Any pointerdown, anywhere on the page, that isn't on a text box or one
+  // of its own controls (handles, floating bar, its toggle) deselects the
+  // current text — including one that a panel/photo/ink handler elsewhere
+  // goes on to stop propagation of and handle in its own way, since this
+  // runs first (see the capture-phase registration in connect()).
+  handlePointerDownCapture(event) {
+    if (event.target.closest(".text-box, .text-handle, .text-tail-handle, .text-tail-shaft-handle, .text-bar-toggle, .text-floating-bar")) {
+      return
+    }
+    this.deselect()
   }
 
   // Mirrors panel_controller.js's identical Delete/Backspace handling.
@@ -113,12 +150,26 @@ export default class extends Controller {
   // own) — simplest to just hide the whole layer for the duration rather
   // than have it show stale/misplaced text boxes over the zoomed panel.
   hide() {
-    this.layerTarget.hidden = true
+    this.focusHidden = true
+    this.updateLayerVisibility()
   }
 
   show() {
-    this.layerTarget.hidden = false
+    this.focusHidden = false
+    this.updateLayerVisibility()
     this.updateTransform()
+  }
+
+  // Layout mode's "Hide text"/"Show text" toggle (see editor_controller.js
+  // #toggleTextsVisibility) — independent of hide()/show() above, so
+  // toggling this doesn't fight with Draw mode's own focus-driven hiding.
+  setForceHidden(hidden) {
+    this.forceHidden = hidden
+    this.updateLayerVisibility()
+  }
+
+  updateLayerVisibility() {
+    this.layerTarget.hidden = this.focusHidden || this.forceHidden
   }
 
   // Called by editor_controller.js's switchMode whenever any mode switch
@@ -126,17 +177,31 @@ export default class extends Controller {
   // selection (and its resize handle) doesn't linger visible after
   // leaving Letter mode.
   deselect() {
+    // Otherwise this method's own renderAll below destroys the currently-
+    // editing box's contenteditable div before the browser gets a chance
+    // to fire its blur (see startEditing's blur listener, which is what
+    // normally commits it) — silently discarding whatever was just typed.
+    // This was a real bug: clicking away from a speech bubble mid-edit
+    // lost the text entirely rather than saving it.
+    this.commitPendingEdit()
+
     if (!this.selectedTextId) return
     this.selectedTextId = null
+    this.floatingBarVisible = false
     this.renderAll(this.currentTexts)
+    this.dispatch("selectionChanged", { bubbles: true })
   }
 
-  // Clicking the empty page background (not any text box) deselects —
-  // wired alongside panel_controller's own identical check on the same
-  // pointerdown (see the canvas element's data-action list).
-  deselectOnBackgroundPointerDown(event) {
-    if (event.target !== this.canvasTarget) return
-    this.deselect()
+  // Reads whatever's currently typed in the box being edited (if any) and
+  // saves it immediately, rather than relying solely on that box's own
+  // blur event — needed anywhere a re-render might tear down the
+  // in-progress edit's DOM node before blur would otherwise fire (see
+  // deselect above).
+  commitPendingEdit() {
+    if (!this.editingTextId) return
+    const textId = this.editingTextId
+    const content = this.layerTarget.querySelector(`.text-box[data-text-id="${textId}"] .text-box-content`)
+    if (content) this.commitEditing(textId, content.textContent)
   }
 
   updateTransform() {
@@ -156,11 +221,18 @@ export default class extends Controller {
   renderAll(texts) {
     this.layerTarget.replaceChildren()
     for (const text of texts) {
+      // The bubble+tail shape is appended *before* the box so it paints
+      // behind it — the box's own content div sits transparent on top of
+      // it (see renderText), which would be backwards the other way
+      // around (a white bubble fill painting over the text).
+      this.renderSpeechShape(text)
       this.renderText(text)
-      this.renderTailShape(text)
-      if (text.id === this.selectedTextId) this.renderTailHandle(text)
+      if (text.id === this.selectedTextId) {
+        this.renderTailHandle(text)
+        this.renderTailShaftHandle(text)
+      }
     }
-    this.renderFloatingBar(texts.find((t) => t.id === this.selectedTextId))
+    this.renderFloatingBar(this.floatingBarVisible ? texts.find((t) => t.id === this.selectedTextId) : null)
   }
 
   renderText(text) {
@@ -189,12 +261,7 @@ export default class extends Controller {
     if (text.kind === "narration") content.style.transform = `skewX(${-NARRATION_SKEW_DEG}deg)`
     box.appendChild(content)
 
-    if (text.id === this.selectedTextId) {
-      const handle = document.createElement("div")
-      handle.className = "text-handle"
-      handle.addEventListener("pointerdown", (event) => this.startResize(event, text.id))
-      box.appendChild(handle)
-    }
+    if (text.id === this.selectedTextId) this.appendSelectionControls(box, text.id)
 
     box.addEventListener("pointerdown", (event) => this.startMove(event, text.id))
     box.addEventListener("dblclick", (event) => this.startEditing(event, text.id))
@@ -202,32 +269,72 @@ export default class extends Controller {
     this.layerTarget.appendChild(box)
   }
 
-  // The pointed tail (Speech only, for now) is part of the bubble's
-  // permanent rendering, not selection-dependent — only its draggable
-  // handle dot (see renderTailHandle) is selection-gated, same as the
-  // resize handle.
-  renderTailShape(text) {
-    const points = tailTriangle(text)
-    if (!points) return
+  // The resize handle and the floating-bar toggle icon both live as
+  // children of the box itself (rather than layer-level siblings, like
+  // the tail handles) so they move for free with it during a drag,
+  // without any extra positioning logic.
+  appendSelectionControls(box, textId) {
+    const resizeHandle = document.createElement("div")
+    resizeHandle.className = "text-handle"
+    resizeHandle.addEventListener("pointerdown", (event) => this.startResize(event, textId))
+    box.appendChild(resizeHandle)
 
-    const xs = points.map(([ x ]) => x)
-    const ys = points.map(([ , y ]) => y)
-    const minX = Math.min(...xs)
-    const minY = Math.min(...ys)
+    const barToggle = document.createElement("button")
+    barToggle.type = "button"
+    barToggle.className = "text-bar-toggle"
+    barToggle.textContent = "⋯"
+    barToggle.setAttribute("aria-label", "Toggle style toolbar")
+    barToggle.addEventListener("pointerdown", (event) => event.stopPropagation())
+    barToggle.addEventListener("click", (event) => {
+      event.stopPropagation()
+      this.toggleFloatingBar(textId)
+    })
+    box.appendChild(barToggle)
+  }
 
+  toggleFloatingBar(textId) {
+    if (this.selectedTextId !== textId) return
+    this.floatingBarVisible = !this.floatingBarVisible
+    this.updateSelectionUI()
+  }
+
+  // Speech's combined bubble+tail outline (see kapow/text.js#
+  // speechBubblePath) — a no-op for Caption/Narration, which have no tail
+  // and render as plain CSS boxes instead (see .text-box--caption/
+  // --narration).
+  renderSpeechShape(text) {
+    if (text.kind !== "speech") return
+
+    const { minX, minY, maxX, maxY } = speechShapeBounds(text)
     const svg = document.createElementNS(SVG_NS, "svg")
-    svg.setAttribute("class", "text-tail-shape")
+    svg.setAttribute("class", "text-speech-shape")
     svg.dataset.textId = text.id
     svg.style.left = `${minX}px`
     svg.style.top = `${minY}px`
-    svg.setAttribute("width", Math.max(...xs) - minX)
-    svg.setAttribute("height", Math.max(...ys) - minY)
+    svg.setAttribute("width", maxX - minX)
+    svg.setAttribute("height", maxY - minY)
+    svg.setAttribute("viewBox", `${minX} ${minY} ${maxX - minX} ${maxY - minY}`)
 
-    const polygon = document.createElementNS(SVG_NS, "polygon")
-    polygon.setAttribute("points", points.map(([ x, y ]) => `${x - minX},${y - minY}`).join(" "))
-    svg.appendChild(polygon)
+    const path = document.createElementNS(SVG_NS, "path")
+    path.setAttribute("d", speechBubblePath(text))
+    svg.appendChild(path)
 
     this.layerTarget.appendChild(svg)
+  }
+
+  // Live-updates the bubble shape mid-gesture (move/resize/tail-drag) by
+  // recomputing it from `overrides` merged onto the text's last-known
+  // state, rather than hiding it for the gesture's duration the way the
+  // small handles/floating bar are (see hideAuxiliaryElements) — a single
+  // path recompute is cheap, and seeing the bubble (the visually
+  // important part) track the drag live matters more here than it did
+  // for 8 separate photo-resize handles.
+  updateSpeechShapePreview(textId, overrides) {
+    const text = this.currentTexts.find((t) => t.id === textId)
+    if (!text || text.kind !== "speech") return
+
+    this.layerTarget.querySelector(`.text-speech-shape[data-text-id="${textId}"]`)?.remove()
+    this.renderSpeechShape({ ...text, ...overrides })
   }
 
   renderTailHandle(text) {
@@ -244,8 +351,27 @@ export default class extends Controller {
     this.layerTarget.appendChild(handle)
   }
 
+  // The "move both together" handle (see startBothDrag) — a diamond dot
+  // roughly midway along the tail's own shaft, visually distinct from the
+  // round tail-tip dot and the square resize handle.
+  renderTailShaftHandle(text) {
+    const midpoint = tailShaftMidpoint(text)
+    if (!midpoint) return
+
+    const [ mx, my ] = midpoint
+    const handle = document.createElement("div")
+    handle.className = "text-tail-shaft-handle"
+    handle.dataset.textId = text.id
+    handle.style.left = `${mx}px`
+    handle.style.top = `${my}px`
+    handle.addEventListener("pointerdown", (event) => this.startBothDrag(event, text.id))
+
+    this.layerTarget.appendChild(handle)
+  }
+
   // Rebuilds the floating bar (A-/A+, rotate, delete, font/bold/italic)
-  // for whichever text is currently selected, or removes it if nothing is.
+  // for whichever text is currently selected, or removes it if nothing is
+  // selected (or the bar's been toggled closed — see toggleFloatingBar).
   renderFloatingBar(text) {
     this.layerTarget.querySelector(".text-floating-bar")?.remove()
     if (!text) return
@@ -326,42 +452,66 @@ export default class extends Controller {
 
   deleteText(textId) {
     this.selectedTextId = null
+    this.floatingBarVisible = false
     this.documentStoreController.store.mutate((state) => {
       state.texts = state.texts.filter((t) => t.id !== textId)
     })
+    this.dispatch("selectionChanged", { bubbles: true })
+  }
+
+  // Same z-order model as panel_controller.js's bringToFront/sendToBack:
+  // stacking is just the texts array's own order (later paints on top),
+  // so "layer" actions just move the selected text to the other end of
+  // that array. Called from editor_controller.js's Letter-tray button
+  // (per the doc's layering feature living in the tool panel, not a
+  // per-text floating-bar button).
+  toggleLayerPosition() {
+    if (!this.selectedTextId) return
+    const textId = this.selectedTextId
+
+    this.documentStoreController.store.mutate((state) => {
+      const index = state.texts.findIndex((t) => t.id === textId)
+      if (index === -1) return
+      const [ text ] = state.texts.splice(index, 1)
+      if (index === state.texts.length) {
+        state.texts.unshift(text)
+      } else {
+        state.texts.push(text)
+      }
+    })
+  }
+
+  get isSelectedTextFrontmost() {
+    const texts = this.currentTexts
+    return texts.length > 0 && texts[texts.length - 1].id === this.selectedTextId
   }
 
   // Toggles selected/handle state on the existing box elements in place,
   // without tearing any of them down — see startMove's tap branch for why
-  // that matters for double-click. The floating bar and tail handle (both
-  // cheap, detached from the box elements themselves) are simply rebuilt.
+  // that matters for double-click. Everything else selection-dependent
+  // (tail handles, floating bar) is simply rebuilt — none of it is a
+  // child of the box, so nothing here risks orphaning a live gesture.
   updateSelectionUI() {
     this.layerTarget.querySelectorAll(".text-box").forEach((box) => {
       const isSelected = box.dataset.textId === this.selectedTextId
       box.classList.toggle("text-box--selected", isSelected)
-      const existingHandle = box.querySelector(".text-handle")
-      if (isSelected && !existingHandle) {
-        const handle = document.createElement("div")
-        handle.className = "text-handle"
-        handle.addEventListener("pointerdown", (event) => this.startResize(event, box.dataset.textId))
-        box.appendChild(handle)
-      } else if (!isSelected && existingHandle) {
-        existingHandle.remove()
+      const hasControls = !!box.querySelector(".text-handle")
+      if (isSelected && !hasControls) {
+        this.appendSelectionControls(box, box.dataset.textId)
+      } else if (!isSelected && hasControls) {
+        box.querySelector(".text-handle")?.remove()
+        box.querySelector(".text-bar-toggle")?.remove()
       }
     })
 
-    // Rebuilt rather than merely toggled visible: startMove/startResize
-    // hide these (see hideAuxiliaryElements) rather than remove them, so a
-    // tap that turns out to be a no-op drag still needs them replaced,
-    // not just un-hidden.
     const texts = this.currentTexts
-    this.layerTarget.querySelectorAll(".text-tail-shape").forEach((el) => el.remove())
-    texts.forEach((text) => this.renderTailShape(text))
-
-    this.layerTarget.querySelector(".text-tail-handle")?.remove()
+    this.layerTarget.querySelectorAll(".text-tail-handle, .text-tail-shaft-handle").forEach((el) => el.remove())
     const selectedText = texts.find((t) => t.id === this.selectedTextId)
-    if (selectedText?.tail) this.renderTailHandle(selectedText)
-    this.renderFloatingBar(selectedText)
+    if (selectedText) {
+      this.renderTailHandle(selectedText)
+      this.renderTailShaftHandle(selectedText)
+    }
+    this.renderFloatingBar(this.floatingBarVisible ? selectedText : null)
   }
 
   startMove(event, textId) {
@@ -372,12 +522,12 @@ export default class extends Controller {
     const text = this.currentTexts.find((t) => t.id === textId)
     if (!text) return
 
-    // The tail's own base is anchored to this box's bottom-center (see
-    // kapow/text.js#tailTriangle) and the floating bar to its top, so
-    // either would need repositioning on every move frame too — simplest
-    // to just hide them for the gesture's duration (same tradeoff as
-    // panel_controller.js's photo-pan handles) and let them reappear,
-    // freshly positioned, once the drag/tap settles below.
+    // The floating bar and tail handles aren't children of the box, so
+    // they'd otherwise go stale mid-drag — simplest to hide them for the
+    // gesture's duration (same tradeoff as panel_controller.js's
+    // photo-pan handles) and let them reappear, freshly positioned, once
+    // the drag/tap settles below. The bubble shape itself (the visually
+    // important part) live-updates instead — see updateSpeechShapePreview.
     this.hideAuxiliaryElements(textId)
 
     const box = this.layerTarget.querySelector(`.text-box[data-text-id="${textId}"]`)
@@ -399,6 +549,12 @@ export default class extends Controller {
         box.style.left = `${lastX}px`
         box.style.top = `${lastY}px`
       }
+      // Bubble-only move: the tail's own tip stays exactly where it was
+      // (text.tail is untouched here), so the bubble visually pivots/
+      // stretches away from its still-anchored tail — see the feedback
+      // this was built from: "keep the end of the tail in one spot and
+      // move just the bubble."
+      this.updateSpeechShapePreview(textId, { x: lastX, y: lastY })
     }
 
     const onUp = () => {
@@ -414,6 +570,9 @@ export default class extends Controller {
         })
       } else {
         this.selectedTextId = this.selectedTextId === textId ? null : textId
+        // Any plain tap-select/deselect closes the bar — it's only opened
+        // back up explicitly via the toggle icon (see toggleFloatingBar).
+        this.floatingBarVisible = false
         // Not a full renderAll: a native double-click is two constituent
         // clicks (each landing here, since pointerdown/pointerup is what
         // registers a tap) followed by a dblclick — rebuilding every box
@@ -422,6 +581,7 @@ export default class extends Controller {
         // silently swallowing the double-click. Updating the existing
         // nodes in place keeps them live across the whole gesture.
         this.updateSelectionUI()
+        this.dispatch("selectionChanged", { bubbles: true })
       }
     }
 
@@ -459,6 +619,7 @@ export default class extends Controller {
         box.style.width = `${lastW}px`
         box.style.height = `${lastH}px`
       }
+      this.updateSpeechShapePreview(textId, { w: lastW, h: lastH })
     }
 
     const onUp = () => {
@@ -479,14 +640,13 @@ export default class extends Controller {
 
   hideAuxiliaryElements(textId) {
     this.layerTarget
-      .querySelectorAll(`.text-tail-shape[data-text-id="${textId}"], .text-tail-handle[data-text-id="${textId}"]`)
+      .querySelectorAll(`.text-tail-handle[data-text-id="${textId}"], .text-tail-shaft-handle[data-text-id="${textId}"]`)
       .forEach((el) => { el.style.display = "none" })
     this.layerTarget.querySelector(".text-floating-bar")?.style.setProperty("display", "none")
   }
 
-  // The tail dot's own drag doesn't need to hide anything else — unlike
-  // move/resize, dragging the tail only ever affects the tail shape
-  // itself, so it can live-update in place every frame instead.
+  // Tail-only move: drags just the tail tip, leaving the bubble itself in
+  // place (text.x/y untouched).
   startTailDrag(event, textId) {
     event.stopPropagation()
     event.preventDefault()
@@ -494,6 +654,7 @@ export default class extends Controller {
     const text = this.currentTexts.find((t) => t.id === textId)
     if (!text?.tail) return
 
+    const shaftHandle = this.layerTarget.querySelector(`.text-tail-shaft-handle[data-text-id="${textId}"]`)
     const startClientX = event.clientX
     const startClientY = event.clientY
     const [ originalTx, originalTy ] = text.tail
@@ -503,7 +664,20 @@ export default class extends Controller {
     const onMove = (moveEvent) => {
       lastTx = originalTx + (moveEvent.clientX - startClientX) / this.scaleX
       lastTy = originalTy + (moveEvent.clientY - startClientY) / this.scaleY
-      this.updateTailPreview(textId, lastTx, lastTy)
+      this.updateSpeechShapePreview(textId, { tail: [ lastTx, lastTy ] })
+
+      const handle = this.layerTarget.querySelector(`.text-tail-handle[data-text-id="${textId}"]`)
+      if (handle) {
+        handle.style.left = `${lastTx}px`
+        handle.style.top = `${lastTy}px`
+      }
+      if (shaftHandle) {
+        const midpoint = tailShaftMidpoint({ ...text, tail: [ lastTx, lastTy ] })
+        if (midpoint) {
+          shaftHandle.style.left = `${midpoint[0]}px`
+          shaftHandle.style.top = `${midpoint[1]}px`
+        }
+      }
     }
 
     const onUp = () => {
@@ -519,18 +693,73 @@ export default class extends Controller {
     window.addEventListener("pointerup", onUp)
   }
 
-  updateTailPreview(textId, tx, ty) {
+  // Bubble+tail together: drags both by the same delta, keeping their
+  // relative offset — the third gesture the feedback asked for, alongside
+  // startMove's "bubble only" and startTailDrag's "tail only".
+  startBothDrag(event, textId) {
+    event.stopPropagation()
+    event.preventDefault()
+
     const text = this.currentTexts.find((t) => t.id === textId)
-    if (!text) return
+    if (!text?.tail) return
 
-    this.layerTarget.querySelector(`.text-tail-shape[data-text-id="${textId}"]`)?.remove()
-    this.renderTailShape({ ...text, tail: [ tx, ty ] })
+    this.layerTarget.querySelector(".text-floating-bar")?.style.setProperty("display", "none")
 
-    const handle = this.layerTarget.querySelector(`.text-tail-handle[data-text-id="${textId}"]`)
-    if (handle) {
-      handle.style.left = `${tx}px`
-      handle.style.top = `${ty}px`
+    const box = this.layerTarget.querySelector(`.text-box[data-text-id="${textId}"]`)
+    const tipHandle = this.layerTarget.querySelector(`.text-tail-handle[data-text-id="${textId}"]`)
+    const shaftHandle = this.layerTarget.querySelector(`.text-tail-shaft-handle[data-text-id="${textId}"]`)
+    const startClientX = event.clientX
+    const startClientY = event.clientY
+    const originalX = text.x
+    const originalY = text.y
+    const [ originalTx, originalTy ] = text.tail
+    let lastX = originalX
+    let lastY = originalY
+    let lastTx = originalTx
+    let lastTy = originalTy
+
+    const onMove = (moveEvent) => {
+      const dx = (moveEvent.clientX - startClientX) / this.scaleX
+      const dy = (moveEvent.clientY - startClientY) / this.scaleY
+      lastX = originalX + dx
+      lastY = originalY + dy
+      lastTx = originalTx + dx
+      lastTy = originalTy + dy
+
+      if (box) {
+        box.style.left = `${lastX}px`
+        box.style.top = `${lastY}px`
+      }
+      if (tipHandle) {
+        tipHandle.style.left = `${lastTx}px`
+        tipHandle.style.top = `${lastTy}px`
+      }
+      const preview = { ...text, x: lastX, y: lastY, tail: [ lastTx, lastTy ] }
+      if (shaftHandle) {
+        const midpoint = tailShaftMidpoint(preview)
+        if (midpoint) {
+          shaftHandle.style.left = `${midpoint[0]}px`
+          shaftHandle.style.top = `${midpoint[1]}px`
+        }
+      }
+      this.updateSpeechShapePreview(textId, { x: lastX, y: lastY, tail: [ lastTx, lastTy ] })
     }
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+      this.documentStoreController.store.mutate((state) => {
+        const target = state.texts.find((t) => t.id === textId)
+        if (target) {
+          target.x = lastX
+          target.y = lastY
+          target.tail = [ lastTx, lastTy ]
+        }
+      })
+    }
+
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
   }
 
   startEditing(event, textId) {
@@ -538,8 +767,10 @@ export default class extends Controller {
     event.stopPropagation()
 
     this.editingTextId = textId
+    if (this.selectedTextId !== textId) this.floatingBarVisible = false
     this.selectedTextId = textId
     this.renderAll(this.currentTexts)
+    this.dispatch("selectionChanged", { bubbles: true })
 
     const content = this.layerTarget.querySelector(`.text-box[data-text-id="${textId}"] .text-box-content`)
     if (!content) return

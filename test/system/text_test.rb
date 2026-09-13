@@ -17,6 +17,19 @@ class TextTest < ApplicationSystemTestCase
     project
   end
 
+  # A single panel covering nearly the whole page, so a click far from the
+  # text box (but still within the page) inevitably lands on the panel
+  # rather than the bare page background.
+  def create_project_with_full_page_panel(user)
+    project = user.projects.create!(name: "Comic", format: :comic)
+    project.pages.create!(position: 1, name: "Page 1", data: {
+      "schema_version" => 1,
+      "panels" => [ { "id" => "p1", "pts" => [ [ 10, 10 ], [ 600, 10 ], [ 600, 900 ], [ 10, 900 ] ], "strokes" => [], "photo" => nil } ],
+      "texts" => []
+    })
+    project
+  end
+
   def switch_to_letter_mode
     within(".mode-tabs") { click_button "Letter" }
   end
@@ -31,6 +44,13 @@ class TextTest < ApplicationSystemTestCase
 
   def text_box(kind)
     find(".text-box--#{kind}")
+  end
+
+  # Selects the box (tap 1) and opens its floating bar via the toggle icon
+  # (tap 2) — the bar no longer opens automatically on selection.
+  def select_and_open_bar(kind)
+    text_box(kind).click
+    find(".text-box--#{kind} .text-bar-toggle").click
   end
 
   def drag_element_by(element, dx, dy)
@@ -172,6 +192,49 @@ class TextTest < ApplicationSystemTestCase
     assert_equal "false", find(".text-box--speech .text-box-content")["contenteditable"]
   end
 
+  test "typing in a speech bubble then clicking the empty page background saves the text (regression)" do
+    user = User.create!(name: "Letterer", email: "letter19@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Speech")
+
+    find(".text-box--speech .text-box-content").double_click
+    content = find(".text-box--speech .text-box-content")
+    content.send_keys("Kapow!")
+
+    # Clicking the empty canvas background (not another element) is what
+    # deselects — this used to tear down the editing box's DOM before its
+    # own blur event could commit the typed text, silently discarding it.
+    find(".page-canvas").click(x: 10, y: 10)
+
+    assert_equal "Kapow!", stored_texts.first["text"]
+    assert_equal "Kapow!", find(".text-box--speech .text-box-content").text
+  end
+
+  test "clicking a panel underneath a text box still deselects the text (regression)" do
+    user = User.create!(name: "Letterer", email: "letter20@kapow.test", password: "password123")
+    project = create_project_with_full_page_panel(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Caption")
+
+    text_box("caption").click
+    assert_selector ".text-box--caption.text-box--selected"
+
+    # The panel spans almost the entire page, so this lands on the panel
+    # itself, not bare page background — a panel's own pointerdown handler
+    # stops propagation as its very first step, so this used to never
+    # reach the text controller's deselect check at all.
+    find("polygon.panel-outline[data-panel-id='p1']").click(x: 5, y: 5)
+
+    assert_no_selector ".text-box--selected"
+  end
+
   test "text boxes aren't draggable outside Letter mode" do
     user = User.create!(name: "Letterer", email: "letter6@kapow.test", password: "password123")
     project = create_blank_project(user)
@@ -190,7 +253,7 @@ class TextTest < ApplicationSystemTestCase
     assert_equal before["y"], after["y"]
   end
 
-  test "selecting a text box shows its floating bar; deselecting hides it" do
+  test "selecting a text box does not show its floating bar; the toggle icon opens/closes it" do
     user = User.create!(name: "Letterer", email: "letter7@kapow.test", password: "password123")
     project = create_blank_project(user)
 
@@ -202,9 +265,31 @@ class TextTest < ApplicationSystemTestCase
     assert_no_selector ".text-floating-bar"
 
     text_box("caption").click
+    assert_selector ".text-box--caption.text-box--selected"
+    assert_no_selector ".text-floating-bar"
+
+    find(".text-box--caption .text-bar-toggle").click
     assert_selector ".text-floating-bar"
 
-    text_box("caption").click
+    find(".text-box--caption .text-bar-toggle").click
+    assert_no_selector ".text-floating-bar"
+  end
+
+  test "deselecting a text closes its floating bar, and reselecting it starts closed again" do
+    user = User.create!(name: "Letterer", email: "letter14@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Caption")
+    select_and_open_bar("caption")
+    assert_selector ".text-floating-bar"
+
+    text_box("caption").click # deselect
+    assert_no_selector ".text-floating-bar"
+
+    text_box("caption").click # reselect
     assert_no_selector ".text-floating-bar"
   end
 
@@ -216,7 +301,7 @@ class TextTest < ApplicationSystemTestCase
     visit project_path(project)
     switch_to_letter_mode
     add_text("Caption")
-    text_box("caption").click
+    select_and_open_bar("caption")
 
     before_fs = stored_texts.first["fs"]
     within(".text-floating-bar") { click_button "A+" }
@@ -235,7 +320,7 @@ class TextTest < ApplicationSystemTestCase
     visit project_path(project)
     switch_to_letter_mode
     add_text("Caption")
-    text_box("caption").click
+    select_and_open_bar("caption")
 
     within(".text-floating-bar") { click_button "↻" }
     assert_equal 8, stored_texts.first["rot"]
@@ -252,7 +337,7 @@ class TextTest < ApplicationSystemTestCase
     visit project_path(project)
     switch_to_letter_mode
     add_text("Caption")
-    text_box("caption").click
+    select_and_open_bar("caption")
 
     within(".text-floating-bar") { click_button "Loud" }
     assert_equal "loud", stored_texts.first["font"]
@@ -272,7 +357,7 @@ class TextTest < ApplicationSystemTestCase
     visit project_path(project)
     switch_to_letter_mode
     add_text("Caption")
-    text_box("caption").click
+    select_and_open_bar("caption")
 
     within(".text-floating-bar") { click_button "🗑" }
 
@@ -322,5 +407,100 @@ class TextTest < ApplicationSystemTestCase
 
     assert after[0] > before[0]
     assert after[1] > before[1]
+  end
+
+  test "a speech bubble renders as one seamless shape, not a separately bordered bubble and tail" do
+    user = User.create!(name: "Letterer", email: "letter15@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Speech")
+
+    # Exactly one combined path (bubble + tail), and the box itself has no
+    # visible border/background of its own (see text_controller.js#
+    # renderSpeechShape / editor.css's .text-box--speech).
+    assert_selector ".text-speech-shape path", count: 1
+    assert_equal "rgba(0, 0, 0, 0)", text_box("speech").native.css_value("background-color")
+  end
+
+  test "dragging a speech bubble's shaft handle moves the bubble and its tail together" do
+    user = User.create!(name: "Letterer", email: "letter16@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Speech")
+    text_box("speech").click
+
+    assert_selector ".text-tail-shaft-handle"
+    before_text = stored_texts.first
+    before_x = before_text["x"]
+    before_tail = before_text["tail"]
+
+    drag_element_by(find(".text-tail-shaft-handle"), 50, 30)
+    after_text = stored_texts.first
+
+    assert after_text["x"] > before_x
+    assert after_text["tail"][0] > before_tail[0]
+    assert after_text["tail"][1] > before_tail[1]
+    # Both moved by the same delta, so their relative offset is unchanged.
+    assert_in_delta before_text["tail"][0] - before_x, after_text["tail"][0] - after_text["x"], 0.01
+  end
+
+  test "the Letter tray's Layer button brings the selected text to front/sends it to back" do
+    user = User.create!(name: "Letterer", email: "letter17@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Caption")
+    add_text("Narration")
+    # Both drop near the same spot (just a small cycled offset apart) —
+    # move narration well clear so it can't intercept a click meant for
+    # the caption underneath it.
+    drag_element_by(text_box("narration"), 150, 150)
+
+    layer_button = find("button[data-editor-target='textLayerButton']")
+    assert layer_button.disabled?
+
+    text_box("caption").click # the back-most of the two
+    assert_not layer_button.disabled?
+    assert_equal "⬆ Bring to front", layer_button.text
+
+    layer_button.click
+    assert_equal "caption", stored_texts.last["kind"]
+
+    assert_equal "⬇ Send to back", layer_button.text
+    layer_button.click
+    assert_equal "caption", stored_texts.first["kind"]
+  end
+
+  test "Layout mode's Hide text button hides every text container until toggled again or the mode changes" do
+    user = User.create!(name: "Letterer", email: "letter18@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Caption")
+    switch_to_layout_mode
+
+    assert_selector ".text-box--caption", visible: :all
+
+    within(".contextual-tray[data-mode='layout']") { click_button "Hide text" }
+    assert_no_selector ".text-box--caption"
+
+    within(".contextual-tray[data-mode='layout']") { click_button "Show text" }
+    assert_selector ".text-box--caption", visible: :all
+
+    within(".contextual-tray[data-mode='layout']") { click_button "Hide text" }
+    assert_no_selector ".text-box--caption"
+
+    switch_to_letter_mode # (b) changing modes also brings it back
+    assert_selector ".text-box--caption", visible: :all
   end
 end

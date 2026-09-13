@@ -55,26 +55,90 @@ export function rotateStep(rot, direction) {
 // type row presents them.
 export const FONT_CHOICES = [ "comic", "loud", "print", "serif" ]
 
-// The pointed tail's triangle (Speech only, for now — Think/Shout are a
-// later PR): a fixed-width notch on the box's own bottom edge as its base,
-// aimed at wherever the draggable tail dot (text.tail) currently is. The
-// base stays anchored to the box rather than also following an arbitrary
-// drag target, keeping the tail visually attached to the bubble it
-// belongs to regardless of how far its tip has been dragged.
-const TAIL_BASE_HALF_WIDTH = 16
+// Speech's bubble + tail as ONE continuous shape (real comic-book bubbles
+// have no seam where the tail meets the body — a separately drawn ellipse
+// and triangle, each with their own stroke, can't achieve that). The
+// tail's two flanks leave the ellipse boundary at a small angular offset
+// either side of "straight down" (the box's own bottom-*edge* only
+// touches the ellipse at the single bottommost point, not across a
+// range), then meet at the tail tip.
+const TAIL_BASE_HALF_ANGLE_DEG = 16
 
-export function tailTriangle(text) {
+function ellipsePoint(cx, cy, rx, ry, deg) {
+  const rad = (deg * Math.PI) / 180
+  return [ cx + rx * Math.cos(rad), cy + ry * Math.sin(rad) ]
+}
+
+// The bottom-center point of the bubble's own bounding box — a rough
+// anchor for the tail's "shaft" handle (see tailShaftMidpoint), not
+// exactly where the tail's flanks leave the ellipse (see
+// TAIL_BASE_HALF_ANGLE_DEG above) since that precision doesn't matter for
+// a handle position.
+export function tailBaseCenter(text) {
+  return [ text.x + text.w / 2, text.y + text.h ]
+}
+
+// The "move both together" handle (see text_controller.js#startBothDrag)
+// sits at the midpoint of the tail's shaft, roughly between the bubble
+// and its tip — a location distinct from both the bubble body (drag =
+// bubble only) and the tail-tip dot (drag = tail only).
+export function tailShaftMidpoint(text) {
   if (!text.tail) return null
+  const [ bx, by ] = tailBaseCenter(text)
+  const [ tx, ty ] = text.tail
+  return [ (bx + tx) / 2, (by + ty) / 2 ]
+}
 
-  const baseY = text.y + text.h
-  const baseCenterX = text.x + text.w / 2
+// An SVG path `d` string for the combined bubble+tail outline. Falls back
+// to a plain closed ellipse if there's no tail (shouldn't happen in
+// practice — every Speech text gets a default tail — but keeps this safe
+// to call unconditionally).
+export function speechBubblePath(text) {
+  const cx = text.x + text.w / 2
+  const cy = text.y + text.h / 2
+  const rx = text.w / 2
+  const ry = text.h / 2
+
+  if (!text.tail) {
+    return `M ${cx - rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx + rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx - rx} ${cy} Z`
+  }
+
+  const [ leftX, leftY ] = ellipsePoint(cx, cy, rx, ry, 90 + TAIL_BASE_HALF_ANGLE_DEG)
+  const [ rightX, rightY ] = ellipsePoint(cx, cy, rx, ry, 90 - TAIL_BASE_HALF_ANGLE_DEG)
   const [ tx, ty ] = text.tail
 
   return [
-    [ baseCenterX - TAIL_BASE_HALF_WIDTH, baseY ],
-    [ baseCenterX + TAIL_BASE_HALF_WIDTH, baseY ],
-    [ tx, ty ]
-  ]
+    `M ${leftX} ${leftY}`,
+    `L ${tx} ${ty}`,
+    `L ${rightX} ${rightY}`,
+    // sweep-flag=0 (not 1) is what actually resolves to *this* ellipse
+    // (centered on the bubble's own box) for the long way around — the
+    // other flag combos either draw the short bottom sliver or a wildly
+    // different, wrong ellipse through the same two points; verified
+    // empirically against getBBox(), not derived by hand.
+    `A ${rx} ${ry} 0 1 0 ${leftX} ${leftY}`,
+    "Z"
+  ].join(" ")
+}
+
+// The bounding box the combined bubble+tail shape needs to render in —
+// the ellipse's own box, extended to include the tail tip (which is
+// otherwise free to sit well outside it).
+export function speechShapeBounds(text) {
+  let minX = text.x
+  let minY = text.y
+  let maxX = text.x + text.w
+  let maxY = text.y + text.h
+
+  if (text.tail) {
+    const [ tx, ty ] = text.tail
+    minX = Math.min(minX, tx)
+    minY = Math.min(minY, ty)
+    maxX = Math.max(maxX, tx)
+    maxY = Math.max(maxY, ty)
+  }
+
+  return { minX, minY, maxX, maxY }
 }
 
 // Per-kind rendering defaults (see the doc's Letter-mode table): font

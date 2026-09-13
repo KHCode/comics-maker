@@ -15,7 +15,10 @@ import {
   resizedSize,
   clampFontSize,
   rotateStep,
-  tailTriangle,
+  tailBaseCenter,
+  tailShaftMidpoint,
+  speechBubblePath,
+  speechShapeBounds,
   defaultText,
   fontFamilyCss
 } from "../../app/javascript/kapow/text.js"
@@ -104,15 +107,45 @@ test("FONT_CHOICES lists the doc's 4 lettering fonts", () => {
   assert.deepEqual(FONT_CHOICES, [ "comic", "loud", "print", "serif" ])
 })
 
-test("tailTriangle anchors its base to the box's bottom-center and its tip to the stored tail point", () => {
-  const text = { x: 100, y: 50, w: 200, h: 120, tail: [ 400, 500 ] }
-  assert.deepEqual(tailTriangle(text), [
-    [ 100 + 100 - 16, 50 + 120 ],
-    [ 100 + 100 + 16, 50 + 120 ],
-    [ 400, 500 ]
-  ])
+test("tailBaseCenter is the bubble box's own bottom-center point", () => {
+  assert.deepEqual(tailBaseCenter({ x: 100, y: 50, w: 200, h: 120 }), [ 200, 170 ])
 })
 
-test("tailTriangle returns null when the element has no tail", () => {
-  assert.equal(tailTriangle({ x: 0, y: 0, w: 10, h: 10, tail: null }), null)
+test("tailShaftMidpoint sits halfway between the bubble's base and the tail tip", () => {
+  const text = { x: 100, y: 50, w: 200, h: 120, tail: [ 400, 500 ] }
+  // base center is [200, 170]; tail tip is [400, 500]
+  assert.deepEqual(tailShaftMidpoint(text), [ 300, 335 ])
+})
+
+test("tailShaftMidpoint returns null when the element has no tail", () => {
+  assert.equal(tailShaftMidpoint({ x: 0, y: 0, w: 10, h: 10, tail: null }), null)
+})
+
+test("speechBubblePath draws a single closed path (no separate re-entry) whether or not there's a tail", () => {
+  const withTail = { x: 100, y: 50, w: 200, h: 120, tail: [ 400, 500 ] }
+  const path = speechBubblePath(withTail)
+  assert.match(path, /^M .+ L .+ L .+ A .+ Z$/)
+  // The tail tip's own coordinates appear verbatim in the path (the
+  // second point drawn, right after the first "M").
+  assert.match(path, /L 400 500 /)
+
+  const withoutTail = { x: 100, y: 50, w: 200, h: 120, tail: null }
+  assert.match(speechBubblePath(withoutTail), /^M .+ A .+ A .+ Z$/)
+})
+
+test("speechShapeBounds is just the bubble's own box when there's no tail", () => {
+  assert.deepEqual(speechShapeBounds({ x: 100, y: 50, w: 200, h: 120, tail: null }), {
+    minX: 100, minY: 50, maxX: 300, maxY: 170
+  })
+})
+
+test("speechShapeBounds extends to include a tail tip that sits outside the bubble's own box", () => {
+  assert.deepEqual(speechShapeBounds({ x: 100, y: 50, w: 200, h: 120, tail: [ 400, 500 ] }), {
+    minX: 100, minY: 50, maxX: 400, maxY: 500
+  })
+  // A tail tip dragged up and to the left of the bubble extends minX/minY
+  // instead of maxX/maxY.
+  assert.deepEqual(speechShapeBounds({ x: 100, y: 50, w: 200, h: 120, tail: [ -20, -10 ] }), {
+    minX: -20, minY: -10, maxX: 300, maxY: 170
+  })
 })

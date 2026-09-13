@@ -28,7 +28,8 @@ export default class extends Controller {
     "photoFileInput", "cameraFileInput", "photoInsert", "photoFit",
     "photoScale", "photoRotate", "photoFlip", "photoCover",
     "photoSubTab", "photoSubPanel",
-    "photoBright", "photoContrast", "photoHue", "photoSat", "photoLook"
+    "photoBright", "photoContrast", "photoHue", "photoSat", "photoLook",
+    "hideTextsButton", "textLayerButton"
   ]
   static values = {
     format: String,
@@ -43,6 +44,7 @@ export default class extends Controller {
 
   connect() {
     this.activePageElement = null
+    this.textsHidden = false
     this.markActivePage(this.newestPageElement)
     this.updateDrawToolUI()
     this.updateDrawColorUI()
@@ -50,6 +52,7 @@ export default class extends Controller {
     this.updateDrawLayerUI()
     this.updatePhotoSubTabUI()
     this.syncPhotoControls()
+    this.syncTextLayerButton()
   }
 
   switchMode(event) {
@@ -74,6 +77,13 @@ export default class extends Controller {
       panelController?.exitFocus()
       this.textControllerFor(pageEl)?.deselect()
     })
+
+    // "Hide text" (see toggleTextsVisibility) only persists until the
+    // user explicitly toggles it back on *or* switches modes — whichever
+    // comes first — so any mode switch resets it back to visible.
+    if (this.textsHidden) this.toggleTextsVisibility()
+
+    this.syncTextLayerButton()
   }
 
   // Draw tray's tool/color/size buttons — panel_controller.js reads these
@@ -343,6 +353,47 @@ export default class extends Controller {
     documentStore.store.mutate((state) => {
       state.texts.push(defaultText(event.params.kind, width / 2 + offset, height / 2 + offset))
     })
+  }
+
+  // Layout tray's "Hide text"/"Show text" toggle — lets the user see the
+  // panel layout with no lettering in the way. Persists until either this
+  // same button is pressed again, or the mode changes (see switchMode),
+  // per the feedback this was built from.
+  toggleTextsVisibility() {
+    this.textsHidden = !this.textsHidden
+    this.pageTargets.forEach((pageEl) => this.textControllerFor(pageEl)?.setForceHidden(this.textsHidden))
+
+    if (this.hasHideTextsButtonTarget) {
+      this.hideTextsButtonTarget.textContent = this.textsHidden ? "Show text" : "Hide text"
+      this.hideTextsButtonTarget.classList.toggle("ink-tool--active", this.textsHidden)
+    }
+  }
+
+  // Letter tray's layer button — bring-to-front/send-to-back for whichever
+  // text is currently selected, living in the tool panel rather than a
+  // per-text floating-bar button (same z-order model as panels; see
+  // text_controller.js#toggleLayerPosition).
+  toggleTextLayer() {
+    this.selectedTextController?.toggleLayerPosition()
+  }
+
+  // Keeps the Letter tray's layer button reflecting whichever text (if
+  // any) is currently selected, across pages — called on selection change
+  // and after any document mutation (reordering can happen without a
+  // selection change), same pattern as syncPhotoControls.
+  syncTextLayerButton() {
+    if (!this.hasTextLayerButtonTarget) return
+
+    const controller = this.selectedTextController
+    const hasSelection = !!controller?.selectedTextId
+    this.textLayerButtonTarget.disabled = !hasSelection
+    this.textLayerButtonTarget.textContent = hasSelection && controller.isSelectedTextFrontmost
+      ? "⬇ Send to back"
+      : "⬆ Bring to front"
+  }
+
+  get selectedTextController() {
+    return this.pageTargets.map((pageEl) => this.textControllerFor(pageEl)).find((tc) => tc?.selectedTextId)
   }
 
   hideEmptyHint() {
