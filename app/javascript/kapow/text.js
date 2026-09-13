@@ -4,14 +4,12 @@
 // see text_controller.js for the HTML-overlay rendering and the
 // pointer-driven move/resize/edit gestures.
 //
-// This PR covers only the three "box-shaped" kinds (Speech/Caption/
-// Narration) per the plan's own phase split — Shout/SFX/Think are a later
-// PR. `color` is stored (matching the full schema) but always its neutral
-// default here — SFX is the only kind that ever sets it (a later PR), same
-// pattern as photo.js's bright/contrast/hue/sat fields before the Adjust
-// tab existed.
+// Speech/Caption/Narration (the "box-shaped" kinds) and Shout/SFX (the
+// starburst/plain-display kinds) are covered here, per the plan's phase
+// split — Think (the last kind, reusing/extending this same tail
+// mechanism for its bubble-trail tail) is a later PR.
 
-export const TEXT_KINDS = [ "speech", "caption", "narration" ]
+export const TEXT_KINDS = [ "speech", "caption", "narration", "shout", "sfx" ]
 
 export const MIN_TEXT_WIDTH = 60
 export const MIN_TEXT_HEIGHT = 40
@@ -121,10 +119,12 @@ export function speechBubblePath(text) {
   ].join(" ")
 }
 
-// The bounding box the combined bubble+tail shape needs to render in —
-// the ellipse's own box, extended to include the tail tip (which is
-// otherwise free to sit well outside it).
-export function speechShapeBounds(text) {
+// The bounding box a combined body+tail shape needs to render in (Speech's
+// ellipse, or Shout's star below) — the body's own box, extended to
+// include the tail tip (which is otherwise free to sit well outside it).
+// Generic over both: neither the ellipse nor the star ever exceeds their
+// own box's edges, so this only needs text.x/y/w/h/tail, not the kind.
+export function tailedShapeBounds(text) {
   let minX = text.x
   let minY = text.y
   let maxX = text.x + text.w
@@ -141,13 +141,87 @@ export function speechShapeBounds(text) {
   return { minX, minY, maxX, maxY }
 }
 
+// Shout's "10-point starburst" (the doc counts outer points; each has a
+// matching inward point between it and the next, for 20 vertices total —
+// the same star panels' own Burst shape uses, see kapow/panel_shapes.js's
+// burstPoints, though duplicated rather than imported for the same
+// Propshaft cross-module-import reason as generateId above).
+const SHOUT_STAR_POINTS = 10
+const SHOUT_STAR_INNER_RATIO = 0.5
+
+// The star's own vertex list, inscribed in the box — or, when there's a
+// tail, with its one bottommost point (see the angle math below: at
+// i = SHOUT_STAR_POINTS the angle is exactly straight down) stretched out
+// to the tail tip instead. That turns one of the star's own natural spikes
+// into the tail, rather than bolting on a separate triangle — the same
+// seamless-shape convention speechBubblePath follows, achieved here for
+// free since the star already comes to a point.
+export function shoutStarPoints(text) {
+  const cx = text.x + text.w / 2
+  const cy = text.y + text.h / 2
+  const outerRx = text.w / 2
+  const outerRy = text.h / 2
+  const count = SHOUT_STAR_POINTS * 2
+
+  const points = Array.from({ length: count }, (_, i) => {
+    const angle = (Math.PI * i) / SHOUT_STAR_POINTS - Math.PI / 2
+    const ratio = i % 2 === 0 ? 1 : SHOUT_STAR_INNER_RATIO
+    return [ cx + outerRx * ratio * Math.cos(angle), cy + outerRy * ratio * Math.sin(angle) ]
+  })
+
+  if (text.tail) points[SHOUT_STAR_POINTS] = text.tail
+
+  return points
+}
+
+// An SVG path `d` string for the star (see shoutStarPoints) as one closed
+// polygon.
+export function shoutStarPath(text) {
+  const [ first, ...rest ] = shoutStarPoints(text)
+  return [ `M ${first[0]} ${first[1]}`, ...rest.map(([ x, y ]) => `L ${x} ${y}`), "Z" ].join(" ")
+}
+
+// SFX's own default rotation and color (the doc: "Loud, red #e0452d, −8°
+// rotation") — no other kind has a non-zero default rotation or sets
+// color at all, so these constants exist only for SFX's own KIND_DEFAULTS
+// entry below.
+export const SFX_DEFAULT_ROTATION_DEG = -8
+export const SFX_DEFAULT_COLOR = "#e0452d"
+
+// SFX's 7-swatch color row — the same 7 hues as Draw mode's own ink
+// palette (kapow/ink.js's INK_COLORS / EditorHelper::INK_COLORS), reused
+// here for visual consistency across the app rather than introducing a
+// second palette. Duplicated, not imported, for the same reason
+// generateId is inlined below (a relative kapow/-to-kapow/ import 404s
+// under Propshaft's fingerprinted URLs).
+export const SFX_COLORS = [
+  "#1c1a17",
+  "#e0452d",
+  "#ffd43a",
+  "#f2994a",
+  "#2f6fed",
+  "#2f9e52",
+  "#8b5cf6"
+]
+
 // Per-kind rendering defaults (see the doc's Letter-mode table): font
 // choice, weight/style, and a starting box size roomy enough for a short
-// line at the default font size.
+// line at the default font size. `rot`/`color` are omitted (defaultText
+// falls back to 0/null below) for every kind but SFX.
 const KIND_DEFAULTS = {
   speech: { font: "comic", bold: true, italic: false, w: 200, h: 120 },
   caption: { font: "comic", bold: true, italic: false, w: 220, h: 70 },
-  narration: { font: "comic", bold: true, italic: true, w: 220, h: 70 }
+  narration: { font: "comic", bold: true, italic: true, w: 220, h: 70 },
+  shout: { font: "loud", bold: false, italic: false, w: 180, h: 140 },
+  sfx: {
+    font: "loud",
+    bold: false,
+    italic: false,
+    w: 160,
+    h: 80,
+    rot: SFX_DEFAULT_ROTATION_DEG,
+    color: SFX_DEFAULT_COLOR
+  }
 }
 
 const DEFAULT_FONT_SIZE = 22
@@ -166,11 +240,11 @@ function generateId() {
 }
 
 // A freshly dropped text element of the given kind, centered on (x, y).
-// Speech's tail starts as a fixed point straight below the box — a
+// Speech/Shout's tail starts as a fixed point straight below the box — a
 // sensible-looking default until the user drags its handle elsewhere (see
 // text_controller.js#startTailDrag).
 export function defaultText(kind, x, y) {
-  const { font, bold, italic, w, h } = KIND_DEFAULTS[kind]
+  const { font, bold, italic, w, h, rot = 0, color = null } = KIND_DEFAULTS[kind]
 
   return {
     id: generateId(),
@@ -180,13 +254,13 @@ export function defaultText(kind, x, y) {
     w,
     h,
     fs: DEFAULT_FONT_SIZE,
-    rot: 0,
+    rot,
     text: "",
-    tail: kind === "speech" ? [ x, y + h / 2 + 30 ] : null,
+    tail: kind === "speech" || kind === "shout" ? [ x, y + h / 2 + 30 ] : null,
     font,
     bold,
     italic,
-    color: null
+    color
   }
 }
 

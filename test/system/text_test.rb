@@ -109,6 +109,95 @@ class TextTest < ApplicationSystemTestCase
     assert_selector ".text-box--narration"
   end
 
+  test "adding Shout/SFX drops each with its own per-kind defaults" do
+    user = User.create!(name: "Letterer", email: "letter21@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+
+    add_text("Shout")
+    add_text("SFX")
+
+    texts = stored_texts
+    shout = texts.find { |t| t["kind"] == "shout" }
+    assert_equal "loud", shout["font"]
+    refute_nil shout["tail"]
+
+    sfx = texts.find { |t| t["kind"] == "sfx" }
+    assert_equal "loud", sfx["font"]
+    assert_equal "#e0452d", sfx["color"]
+    assert_equal(-8, sfx["rot"])
+    assert_nil sfx["tail"]
+
+    assert_selector ".text-box--shout"
+    assert_selector ".text-box--sfx"
+  end
+
+  test "a shout renders as one seamless starburst shape, with a draggable tail" do
+    user = User.create!(name: "Letterer", email: "letter22@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Shout")
+
+    assert_selector ".text-shape--shout path", count: 1
+    assert_equal "rgba(0, 0, 0, 0)", text_box("shout").native.css_value("background-color")
+
+    text_box("shout").click
+    assert_selector ".text-tail-handle"
+
+    before = stored_texts.first["tail"]
+    drag_element_by(find(".text-tail-handle"), 40, 25)
+    after = stored_texts.first["tail"]
+
+    assert after[0] > before[0]
+    assert after[1] > before[1]
+  end
+
+  test "SFX renders with no box background, and its floating bar's color row recolors it" do
+    user = User.create!(name: "Letterer", email: "letter23@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("SFX")
+    select_and_open_bar("sfx")
+
+    assert_equal "rgba(0, 0, 0, 0)", text_box("sfx").native.css_value("background-color")
+    assert_selector ".text-floating-bar .floating-bar-swatch", count: 7
+
+    within(".text-floating-bar") { all(".floating-bar-swatch")[2].click }
+    assert_equal "#ffd43a", stored_texts.first["color"]
+  end
+
+  test "a freshly-added SFX shows a placeholder outline (regression: it's otherwise invisible)" do
+    user = User.create!(name: "Letterer", email: "letter24@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("SFX")
+
+    content = find(".text-box--sfx .text-box-content")
+    assert_equal "2px", content.native.css_value("border-top-width")
+    assert_equal "dashed", content.native.css_value("border-top-style")
+
+    content.double_click
+    content = find(".text-box--sfx .text-box-content")
+    content.send_keys("POW!")
+    find("body").click # blur
+
+    assert_equal "POW!", stored_texts.first["text"]
+    after = find(".text-box--sfx .text-box-content")
+    assert_equal "0px", after.native.css_value("border-top-width")
+  end
+
   test "clicking a text box selects it (showing its resize handle); clicking again deselects" do
     user = User.create!(name: "Letterer", email: "letter2@kapow.test", password: "password123")
     project = create_blank_project(user)
@@ -420,8 +509,8 @@ class TextTest < ApplicationSystemTestCase
 
     # Exactly one combined path (bubble + tail), and the box itself has no
     # visible border/background of its own (see text_controller.js#
-    # renderSpeechShape / editor.css's .text-box--speech).
-    assert_selector ".text-speech-shape path", count: 1
+    # renderPathShape / editor.css's .text-box--speech).
+    assert_selector ".text-shape--speech path", count: 1
     assert_equal "rgba(0, 0, 0, 0)", text_box("speech").native.css_value("background-color")
   end
 

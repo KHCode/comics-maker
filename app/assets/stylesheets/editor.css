@@ -308,16 +308,19 @@
 }
 
 .text-box--speech,
-.text-box--narration {
+.text-box--narration,
+.text-box--shout,
+.text-box--sfx {
   justify-content: center;
   text-align: center;
 }
 
-/* Speech's own bubble is rendered entirely by .text-speech-shape (a
-   single seamless SVG path — see below) behind this box, not by a CSS
-   background/border on the box itself: a bubble and a separately CSS-
+/* Speech/Shout's own body is rendered entirely by .text-shape (a single
+   seamless SVG path — see below) behind this box, not by a CSS
+   background/border on the box itself: a body and a separately CSS-
    bordered box would leave a visible seam wherever the tail meets it. */
-.text-box--speech {
+.text-box--speech,
+.text-box--shout {
   background: transparent;
 }
 
@@ -326,21 +329,68 @@
   border: 3px solid var(--color-ink);
 }
 
-/* Speech's combined bubble+tail outline — one continuous SVG path (see
-   kapow/text.js#speechBubblePath), so there's no seam between the bubble
-   and its tail the way a separately bordered ellipse+triangle would have.
+/* Shout's white-on-ink text (the doc's own fixed per-kind style, not a
+   user-adjustable field the way SFX's swatch-chosen color is). */
+.text-box--shout {
+  color: #fff;
+}
+
+/* SFX has no box/background at all (the doc: "no box") — just its own
+   display text, styled below with an ink outline + drop shadow standing
+   in for the box other kinds would otherwise have. */
+.text-box--sfx {
+  background: transparent;
+}
+
+.text-box--sfx .text-box-content {
+  -webkit-text-stroke: 2px var(--color-ink);
+  text-shadow: 3px 3px 0 var(--color-ink);
+}
+
+/* A freshly-added SFX has no text yet, and (unlike every other kind) no
+   background/border/shape of its own to fall back on — with nothing
+   rendered at all, there'd be no way to even find it to double-tap and
+   start typing. This dashed placeholder box only matches while genuinely
+   empty (:empty requires zero child nodes, which an untyped-into
+   contenteditable div has); typing so much as one character removes it,
+   leaving the real "no box" ink-outline text the doc specifies. */
+.text-box--sfx .text-box-content:empty {
+  display: block;
+  width: 100%;
+  min-height: 1.6em;
+  border: 2px dashed var(--color-ink);
+  border-radius: 6px;
+  opacity: 0.5;
+}
+
+.text-box--sfx .text-box-content:empty::before {
+  content: "SFX";
+  display: block;
+  text-align: center;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+}
+
+/* Speech's combined bubble+tail outline, or Shout's combined star+tail
+   outline — one continuous SVG path either way (see kapow/text.js#
+   speechBubblePath / #shoutStarPath), so there's no seam between the body
+   and its tail the way a separately bordered shape+triangle would have.
    Sits behind the box (see text_controller.js#renderAll's render order),
    which is why the box itself has no background/border of its own. */
-.text-speech-shape {
+.text-shape {
   position: absolute;
   overflow: visible;
   pointer-events: none;
 }
 
-.text-speech-shape path {
+.text-shape--speech path {
   fill: #fff;
   stroke: var(--color-ink);
   stroke-width: 3;
+}
+
+.text-shape--shout path {
+  fill: var(--color-ink);
 }
 
 .text-tail-handle {
@@ -422,6 +472,23 @@
 .text-floating-bar .floating-bar-button--active {
   background: var(--color-accent);
   color: var(--color-ink);
+}
+
+/* SFX-only color row (see text_controller.js#colorSwatchButton) — mirrors
+   Draw mode's own .ink-color swatches for visual consistency. */
+.floating-bar-swatch {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2.5px solid var(--color-ink);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.floating-bar-swatch--active {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .text-box--caption {

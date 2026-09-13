@@ -5,11 +5,13 @@ import {
   clampFontSize,
   rotateStep,
   speechBubblePath,
-  speechShapeBounds,
+  shoutStarPath,
+  tailedShapeBounds,
   tailShaftMidpoint,
   fontFamilyCss,
   FONT_SIZE_STEP,
-  FONT_CHOICES
+  FONT_CHOICES,
+  SFX_COLORS
 } from "kapow/text"
 
 const SVG_NS = "http://www.w3.org/2000/svg"
@@ -39,8 +41,8 @@ const BAR_ROW_GAP = 6
 const BAR_ESTIMATED_HEIGHT = BAR_BUTTON_SIZE * 2 + BAR_ROW_GAP
 const BAR_MARGIN_ABOVE = 12
 
-// Renders Letter mode's text elements (Speech/Caption/Narration in this
-// PR — Shout/SFX/Think are a later PR) as an HTML overlay, not SVG: see
+// Renders Letter mode's text elements (Speech/Caption/Narration/Shout/SFX
+// — Think is a later PR) as an HTML overlay, not SVG: see
 // the plan's own open question on this (foreignObject's Safari
 // contenteditable bugs). The overlay div (see the `layer` target) is
 // positioned/scaled to sit exactly over the page's own SVG canvas via a
@@ -221,11 +223,11 @@ export default class extends Controller {
   renderAll(texts) {
     this.layerTarget.replaceChildren()
     for (const text of texts) {
-      // The bubble+tail shape is appended *before* the box so it paints
+      // The bubble/star shape is appended *before* the box so it paints
       // behind it — the box's own content div sits transparent on top of
       // it (see renderText), which would be backwards the other way
-      // around (a white bubble fill painting over the text).
-      this.renderSpeechShape(text)
+      // around (an opaque shape fill painting over the text).
+      this.renderPathShape(text)
       this.renderText(text)
       if (text.id === this.selectedTextId) {
         this.renderTailHandle(text)
@@ -298,16 +300,23 @@ export default class extends Controller {
     this.updateSelectionUI()
   }
 
-  // Speech's combined bubble+tail outline (see kapow/text.js#
-  // speechBubblePath) — a no-op for Caption/Narration, which have no tail
-  // and render as plain CSS boxes instead (see .text-box--caption/
-  // --narration).
-  renderSpeechShape(text) {
-    if (text.kind !== "speech") return
+  // Speech's combined bubble+tail outline (kapow/text.js#speechBubblePath)
+  // or Shout's combined star+tail outline (#shoutStarPath) — a no-op for
+  // every other kind, which has no body shape of its own and renders as a
+  // plain CSS box instead (see .text-box--caption/--narration/--sfx).
+  pathDataFor(text) {
+    if (text.kind === "speech") return speechBubblePath(text)
+    if (text.kind === "shout") return shoutStarPath(text)
+    return null
+  }
 
-    const { minX, minY, maxX, maxY } = speechShapeBounds(text)
+  renderPathShape(text) {
+    const pathData = this.pathDataFor(text)
+    if (!pathData) return
+
+    const { minX, minY, maxX, maxY } = tailedShapeBounds(text)
     const svg = document.createElementNS(SVG_NS, "svg")
-    svg.setAttribute("class", "text-speech-shape")
+    svg.setAttribute("class", `text-shape text-shape--${text.kind}`)
     svg.dataset.textId = text.id
     svg.style.left = `${minX}px`
     svg.style.top = `${minY}px`
@@ -316,25 +325,27 @@ export default class extends Controller {
     svg.setAttribute("viewBox", `${minX} ${minY} ${maxX - minX} ${maxY - minY}`)
 
     const path = document.createElementNS(SVG_NS, "path")
-    path.setAttribute("d", speechBubblePath(text))
+    path.setAttribute("d", pathData)
     svg.appendChild(path)
 
     this.layerTarget.appendChild(svg)
   }
 
-  // Live-updates the bubble shape mid-gesture (move/resize/tail-drag) by
+  // Live-updates the shape mid-gesture (move/resize/tail-drag) by
   // recomputing it from `overrides` merged onto the text's last-known
   // state, rather than hiding it for the gesture's duration the way the
   // small handles/floating bar are (see hideAuxiliaryElements) — a single
-  // path recompute is cheap, and seeing the bubble (the visually
+  // path recompute is cheap, and seeing the shape (the visually
   // important part) track the drag live matters more here than it did
   // for 8 separate photo-resize handles.
-  updateSpeechShapePreview(textId, overrides) {
+  updatePathShapePreview(textId, overrides) {
     const text = this.currentTexts.find((t) => t.id === textId)
-    if (!text || text.kind !== "speech") return
+    if (!text) return
+    const merged = { ...text, ...overrides }
+    if (!this.pathDataFor(merged)) return
 
-    this.layerTarget.querySelector(`.text-speech-shape[data-text-id="${textId}"]`)?.remove()
-    this.renderSpeechShape({ ...text, ...overrides })
+    this.layerTarget.querySelector(`.text-shape[data-text-id="${textId}"]`)?.remove()
+    this.renderPathShape(merged)
   }
 
   renderTailHandle(text) {
@@ -369,9 +380,10 @@ export default class extends Controller {
     this.layerTarget.appendChild(handle)
   }
 
-  // Rebuilds the floating bar (A-/A+, rotate, delete, font/bold/italic)
-  // for whichever text is currently selected, or removes it if nothing is
-  // selected (or the bar's been toggled closed — see toggleFloatingBar).
+  // Rebuilds the floating bar (A-/A+, rotate, delete, font/bold/italic,
+  // plus an SFX-only color row) for whichever text is currently selected,
+  // or removes it if nothing is selected (or the bar's been toggled
+  // closed — see toggleFloatingBar).
   renderFloatingBar(text) {
     this.layerTarget.querySelector(".text-floating-bar")?.remove()
     if (!text) return
@@ -405,6 +417,19 @@ export default class extends Controller {
     row2.appendChild(italicButton)
     bar.appendChild(row2)
 
+    // SFX only: a 7-swatch color row recoloring the outlined display text
+    // (see the doc) — no other kind lets the user pick its color at all.
+    if (text.kind === "sfx") {
+      const row3 = document.createElement("div")
+      row3.className = "text-floating-bar-row"
+      SFX_COLORS.forEach((hex) => {
+        const swatch = this.colorSwatchButton(hex, text.id)
+        swatch.classList.toggle("floating-bar-swatch--active", text.color === hex)
+        row3.appendChild(swatch)
+      })
+      bar.appendChild(row3)
+    }
+
     this.layerTarget.appendChild(bar)
     this.positionFloatingBar(bar, text)
   }
@@ -425,6 +450,20 @@ export default class extends Controller {
     return button
   }
 
+  colorSwatchButton(hex, textId) {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.className = "floating-bar-swatch"
+    button.style.backgroundColor = hex
+    button.setAttribute("aria-label", `Color ${hex}`)
+    button.addEventListener("pointerdown", (event) => event.stopPropagation())
+    button.addEventListener("click", (event) => {
+      event.stopPropagation()
+      this.handleFloatingBarAction(`color:${hex}`, textId)
+    })
+    return button
+  }
+
   positionFloatingBar(bar, text) {
     const centerX = text.x + text.w / 2
     const top = Math.max(text.y - BAR_MARGIN_ABOVE - BAR_ESTIMATED_HEIGHT, 0)
@@ -441,6 +480,7 @@ export default class extends Controller {
     if (action === "bold") return this.mutateText(textId, (t) => ({ ...t, bold: !t.bold }))
     if (action === "italic") return this.mutateText(textId, (t) => ({ ...t, italic: !t.italic }))
     if (action.startsWith("font:")) return this.mutateText(textId, (t) => ({ ...t, font: action.slice(5) }))
+    if (action.startsWith("color:")) return this.mutateText(textId, (t) => ({ ...t, color: action.slice(6) }))
   }
 
   mutateText(textId, computeNewText) {
@@ -527,7 +567,7 @@ export default class extends Controller {
     // gesture's duration (same tradeoff as panel_controller.js's
     // photo-pan handles) and let them reappear, freshly positioned, once
     // the drag/tap settles below. The bubble shape itself (the visually
-    // important part) live-updates instead — see updateSpeechShapePreview.
+    // important part) live-updates instead — see updatePathShapePreview.
     this.hideAuxiliaryElements(textId)
 
     const box = this.layerTarget.querySelector(`.text-box[data-text-id="${textId}"]`)
@@ -554,7 +594,7 @@ export default class extends Controller {
       // stretches away from its still-anchored tail — see the feedback
       // this was built from: "keep the end of the tail in one spot and
       // move just the bubble."
-      this.updateSpeechShapePreview(textId, { x: lastX, y: lastY })
+      this.updatePathShapePreview(textId, { x: lastX, y: lastY })
     }
 
     const onUp = () => {
@@ -619,7 +659,7 @@ export default class extends Controller {
         box.style.width = `${lastW}px`
         box.style.height = `${lastH}px`
       }
-      this.updateSpeechShapePreview(textId, { w: lastW, h: lastH })
+      this.updatePathShapePreview(textId, { w: lastW, h: lastH })
     }
 
     const onUp = () => {
@@ -664,7 +704,7 @@ export default class extends Controller {
     const onMove = (moveEvent) => {
       lastTx = originalTx + (moveEvent.clientX - startClientX) / this.scaleX
       lastTy = originalTy + (moveEvent.clientY - startClientY) / this.scaleY
-      this.updateSpeechShapePreview(textId, { tail: [ lastTx, lastTy ] })
+      this.updatePathShapePreview(textId, { tail: [ lastTx, lastTy ] })
 
       const handle = this.layerTarget.querySelector(`.text-tail-handle[data-text-id="${textId}"]`)
       if (handle) {
@@ -742,7 +782,7 @@ export default class extends Controller {
           shaftHandle.style.top = `${midpoint[1]}px`
         }
       }
-      this.updateSpeechShapePreview(textId, { x: lastX, y: lastY, tail: [ lastTx, lastTy ] })
+      this.updatePathShapePreview(textId, { x: lastX, y: lastY, tail: [ lastTx, lastTy ] })
     }
 
     const onUp = () => {

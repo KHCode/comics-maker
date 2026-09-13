@@ -3,6 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
+  TEXT_KINDS,
   MIN_TEXT_WIDTH,
   MIN_TEXT_HEIGHT,
   MIN_FONT_SIZE,
@@ -10,6 +11,9 @@ import {
   FONT_SIZE_STEP,
   ROTATE_STEP_DEG,
   FONT_CHOICES,
+  SFX_COLORS,
+  SFX_DEFAULT_COLOR,
+  SFX_DEFAULT_ROTATION_DEG,
   clampTextWidth,
   clampTextHeight,
   resizedSize,
@@ -18,7 +22,9 @@ import {
   tailBaseCenter,
   tailShaftMidpoint,
   speechBubblePath,
-  speechShapeBounds,
+  shoutStarPoints,
+  shoutStarPath,
+  tailedShapeBounds,
   defaultText,
   fontFamilyCss
 } from "../../app/javascript/kapow/text.js"
@@ -63,6 +69,28 @@ test("defaultText sets narration to bold+italic per the doc's defaults table, ca
   const narration = defaultText("narration", 0, 0)
   assert.equal(narration.bold, true)
   assert.equal(narration.italic, true)
+})
+
+test("TEXT_KINDS lists all 5 kinds covered so far, Think excluded (a later PR)", () => {
+  assert.deepEqual(TEXT_KINDS, [ "speech", "caption", "narration", "shout", "sfx" ])
+})
+
+test("defaultText gives Shout a fixed default tail below it, like Speech", () => {
+  const text = defaultText("shout", 300, 200)
+  assert.equal(text.font, "loud")
+  assert.deepEqual(text.tail, [ 300, 200 + text.h / 2 + 30 ])
+})
+
+test("defaultText sets SFX's doc-specified defaults: Loud font, red color, -8deg rotation, no tail", () => {
+  const text = defaultText("sfx", 0, 0)
+  assert.equal(text.font, "loud")
+  assert.equal(text.color, SFX_DEFAULT_COLOR)
+  assert.equal(text.rot, SFX_DEFAULT_ROTATION_DEG)
+  assert.equal(text.tail, null)
+})
+
+test("SFX_COLORS lists 7 swatches", () => {
+  assert.equal(SFX_COLORS.length, 7)
 })
 
 test("defaultText assigns each a unique id", () => {
@@ -133,19 +161,42 @@ test("speechBubblePath draws a single closed path (no separate re-entry) whether
   assert.match(speechBubblePath(withoutTail), /^M .+ A .+ A .+ Z$/)
 })
 
-test("speechShapeBounds is just the bubble's own box when there's no tail", () => {
-  assert.deepEqual(speechShapeBounds({ x: 100, y: 50, w: 200, h: 120, tail: null }), {
+test("tailedShapeBounds is just the body's own box when there's no tail", () => {
+  assert.deepEqual(tailedShapeBounds({ x: 100, y: 50, w: 200, h: 120, tail: null }), {
     minX: 100, minY: 50, maxX: 300, maxY: 170
   })
 })
 
-test("speechShapeBounds extends to include a tail tip that sits outside the bubble's own box", () => {
-  assert.deepEqual(speechShapeBounds({ x: 100, y: 50, w: 200, h: 120, tail: [ 400, 500 ] }), {
+test("tailedShapeBounds extends to include a tail tip that sits outside the body's own box", () => {
+  assert.deepEqual(tailedShapeBounds({ x: 100, y: 50, w: 200, h: 120, tail: [ 400, 500 ] }), {
     minX: 100, minY: 50, maxX: 400, maxY: 500
   })
-  // A tail tip dragged up and to the left of the bubble extends minX/minY
+  // A tail tip dragged up and to the left of the body extends minX/minY
   // instead of maxX/maxY.
-  assert.deepEqual(speechShapeBounds({ x: 100, y: 50, w: 200, h: 120, tail: [ -20, -10 ] }), {
+  assert.deepEqual(tailedShapeBounds({ x: 100, y: 50, w: 200, h: 120, tail: [ -20, -10 ] }), {
     minX: -20, minY: -10, maxX: 300, maxY: 170
   })
+})
+
+test("shoutStarPoints generates a 20-vertex (10-point) star inscribed in the box, no tail", () => {
+  const points = shoutStarPoints({ x: 100, y: 50, w: 200, h: 120, tail: null })
+  assert.equal(points.length, 20)
+  // The bottommost outer vertex sits at the box's own bottom-center when
+  // there's no tail to stretch it toward.
+  const [ cx, cy ] = tailBaseCenter({ x: 100, y: 50, w: 200, h: 120 })
+  const [ bx, by ] = points[10]
+  assert.ok(Math.abs(bx - cx) < 0.001)
+  assert.ok(Math.abs(by - cy) < 0.001)
+})
+
+test("shoutStarPoints stretches its bottommost point out to the tail tip instead, when there's a tail", () => {
+  const points = shoutStarPoints({ x: 100, y: 50, w: 200, h: 120, tail: [ 500, 600 ] })
+  assert.deepEqual(points[10], [ 500, 600 ])
+})
+
+test("shoutStarPath draws a single closed polygon through all 20 vertices", () => {
+  const path = shoutStarPath({ x: 100, y: 50, w: 200, h: 120, tail: [ 500, 600 ] })
+  assert.match(path, /^M .+ Z$/)
+  assert.equal((path.match(/L /g) || []).length, 19)
+  assert.match(path, /L 500 600/)
 })
