@@ -34,6 +34,27 @@
 .format-preview--newspaper_strip { aspect-ratio: 1000 / 330; }
 .format-preview--webtoon { aspect-ratio: 500 / 1500; }
 
+.project-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.project-tab {
+  padding: 0.4rem 0.9rem;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
+}
+
+.project-tab--active {
+  background: var(--color-accent);
+  /* Explicit ink, not --color-text: the accent fill stays bright yellow in
+     dark mode too, so the theme-swapped (near-white) text would be unreadable. */
+  color: var(--color-ink);
+}
+
 .project-list {
   list-style: none;
   padding: 0;
@@ -52,8 +73,38 @@
   background: var(--color-surface-raised);
 }
 
+.project-thumbnail-link {
+  flex-shrink: 0;
+  display: block;
+}
+
+/* A fixed square for every project regardless of its own format's aspect
+   ratio — a real thumbnail (whatever page shape it was rendered from) gets
+   cropped to fit via object-fit: cover, same idea as CSS background-size:
+   cover but for an <img>. Explicit width+height (not just width, as
+   .format-preview normally relies on) is what overrides .format-preview's
+   own per-format aspect-ratio rule on the placeholder variant — CSS
+   ignores aspect-ratio once both dimensions are set explicitly. */
+.project-thumbnail,
+.project-thumbnail-placeholder.format-preview {
+  width: 56px;
+  height: 56px;
+  display: block;
+  object-fit: cover;
+}
+
 .project-info {
   margin-right: auto;
+}
+
+.inline-rename-form {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.inline-rename-form input[type="text"] {
+  font: inherit;
 }
 
 .project-actions {

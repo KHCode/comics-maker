@@ -1,4 +1,4 @@
-<div data-controller="modal">
+<div data-controller="modal save-dialog">
   <button type="button" class="btn" data-action="click->modal#open">Save</button>
 
   <dialog data-modal-target="dialog" data-modal-open-value="<%= @open_save_dialog ? "true" : "false" %>" data-action="click->modal#closeOnBackdrop">
@@ -12,7 +12,14 @@
       </ul>
     <% end %>
 
-    <%= form_with model: @project, url: project_path(@project), method: :patch do |form| %>
+    <%# save-dialog#submit intercepts this form's submit to render a fresh
+        thumbnail from the first page (see editor_controller.js#
+        renderThumbnailBlob) and upload it into the hidden field below
+        before letting the real submission through — see
+        save_dialog_controller.js. A slow or failed render/upload never
+        blocks the actual Save; it just goes through without updating the
+        thumbnail that time. %>
+    <%= form_with model: @project, url: project_path(@project), method: :patch, data: { save_dialog_target: "form", action: "submit->save-dialog#submit" } do |form| %>
       <%= form.label :name %><br>
       <%= form.text_field :name, required: true %><br>
 
@@ -23,6 +30,8 @@
         Already in "<%= @project.folder&.name || "My Comics" %>":
         <%= @folder_projects.any? ? @folder_projects.map(&:name).join(", ") : "nothing else yet" %>
       </small></p>
+
+      <%= form.hidden_field :thumbnail, value: "", data: { save_dialog_target: "thumbnailField" } %>
 
       <button type="submit" name="save_mode" value="save">Save</button>
       <button type="submit" name="save_mode" value="save_as">Save As&hellip;</button>

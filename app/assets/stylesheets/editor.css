@@ -8,6 +8,15 @@
   inset: 0;
   display: flex;
   flex-direction: column;
+  /* Canvas zoom (see editor_controller.js#applyZoom) — a plain custom
+     property consumed by .page-canvas's own width below, not a transform
+     on any ancestor. A transform (or the CSS `zoom` property) here would
+     also resize/reposition .page--focused's fixed-position focus overlay,
+     since either one creates a new containing block for `position: fixed`
+     descendants — this way Draw mode's focus view (which overrides
+     .page-canvas's width outright, see below) is completely unaffected by
+     whatever the canvas zoom level is. */
+  --canvas-zoom: 1;
 }
 
 .editor-header {
@@ -61,6 +70,19 @@
   border-radius: var(--radius);
   outline: 3px solid transparent;
   outline-offset: 6px;
+  /* The zoom-driven width lives here, not on .page-canvas/.page-toolbar
+     themselves (see --canvas-zoom on .editor) — .pages is a flex
+     container with align-items: center, which sizes an item with no
+     explicit width of its own via shrink-to-fit; a percentage width on
+     *this* element's children can't be resolved without first knowing
+     .page's own size, so the browser has to ignore it for that shrink-
+     to-fit calculation, locking .page (and everything using % inside it)
+     to the SVG's small intrinsic replaced-element size regardless of
+     --canvas-zoom — confirmed by inspecting actual rendered widths, not
+     assumed. Giving .page itself an explicit width here instead sidesteps
+     the shrink-to-fit calculation entirely, so its children's own 100%
+     widths below resolve against a real, already-known number. */
+  width: min(100%, calc(400px * var(--canvas-zoom)));
 }
 
 .page--active {
@@ -107,6 +129,18 @@
   max-height: 100%;
 }
 
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.zoom-level {
+  min-width: 3.5em;
+  text-align: center;
+  font-weight: 800;
+}
+
 .header-focus-exit {
   /* Panels now zoom in with only a minimal margin (see FOCUS_MARGIN_RATIO
      in panel_controller.js), so a "Whole page" button floating over the
@@ -128,7 +162,10 @@
 .page-toolbar {
   display: flex;
   align-items: center;
-  width: min(100%, 400px);
+  /* .page itself now carries the zoom-driven width (see above) — this
+     just fills it, keeping the label/delete-page row aligned to the
+     canvas's edges below at any zoom level. */
+  width: 100%;
   margin-bottom: 0.25rem;
 }
 
@@ -139,7 +176,14 @@
 
 .page-canvas {
   display: block;
-  width: min(100%, 400px);
+  /* .page itself carries the zoom-driven width (see above, and --canvas-
+     zoom on .editor) — this just fills it. Everything else in this file
+     that cares about size (handles, stroke widths, the text overlay's
+     transform) already derives from this element's own *rendered* size
+     (getBoundingClientRect/getScreenCTM/ResizeObserver), which changing a
+     plain intrinsic width naturally keeps correct with no further
+     plumbing needed there. */
+  width: 100%;
   height: auto;
   border: var(--border-width) solid var(--color-ink);
   border-radius: calc(var(--radius) / 2);

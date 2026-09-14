@@ -14,6 +14,16 @@ const EXPORT_MIME = "image/png"
 // /DCTDecode — see kapow/pdf.js's own header comment for why.
 const EXPORT_PDF_PAGE_MIME = "image/jpeg"
 const EXPORT_PDF_PAGE_QUALITY = 0.92
+// Projects screen thumbnail (see renderThumbnailBlob) — small enough to be
+// cheap to store/list many of, but still recognizable at list-item size.
+const THUMBNAIL_MAX_WIDTH = 320
+const THUMBNAIL_MIME = "image/jpeg"
+const THUMBNAIL_QUALITY = 0.8
+// Canvas zoom (see zoomIn/zoomOut/applyZoom) — session-only, like "Hide
+// text", not persisted; always starts back at 100% on the next visit.
+const ZOOM_MIN = 0.5
+const ZOOM_MAX = 2.5
+const ZOOM_STEP = 0.25
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
@@ -50,7 +60,8 @@ export default class extends Controller {
     "photoBright", "photoContrast", "photoHue", "photoSat", "photoLook",
     "hideTextsButton", "textLayerButton",
     "undoButton", "redoButton",
-    "exportButton", "exportPdfButton"
+    "exportButton", "exportPdfButton",
+    "zoomInButton", "zoomOutButton", "zoomLevel"
   ]
   static values = {
     format: String,
@@ -60,7 +71,8 @@ export default class extends Controller {
     drawColor: { type: String, default: INK_COLORS[0] },
     drawSize: { type: String, default: "m" },
     drawLayer: { type: String, default: "ink" },
-    photoSubTab: { type: String, default: "fit" }
+    photoSubTab: { type: String, default: "fit" },
+    zoom: { type: Number, default: 1 }
   }
 
   connect() {
@@ -81,6 +93,7 @@ export default class extends Controller {
     this.syncPhotoControls()
     this.syncTextLayerButton()
     this.syncUndoRedoButtons()
+    this.applyZoom()
   }
 
   switchMode(event) {
@@ -451,6 +464,36 @@ export default class extends Controller {
     return this.lastMutatedPageElement || this.targetPageElement
   }
 
+  // Canvas zoom — works the same in every mode, independent of Draw
+  // mode's own separate per-panel focus-zoom (which overrides .page-canvas
+  // 's width outright, see editor.css, so the two never conflict). Applied
+  // as a single CSS custom property on this element (see --canvas-zoom in
+  // editor.css) rather than a transform, so it never touches .page--
+  // focused's fixed positioning or panel_controller.js/text_controller.js
+  // 's own coordinate math — both already derive everything from the
+  // canvas SVG's own *rendered* size, which changing a plain CSS width
+  // naturally keeps correct (including re-firing text_controller.js's
+  // existing ResizeObserver) with no changes needed there at all.
+  zoomIn() {
+    this.setZoom(this.zoomValue + ZOOM_STEP)
+  }
+
+  zoomOut() {
+    this.setZoom(this.zoomValue - ZOOM_STEP)
+  }
+
+  setZoom(zoom) {
+    this.zoomValue = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom))
+    this.applyZoom()
+  }
+
+  applyZoom() {
+    this.element.style.setProperty("--canvas-zoom", this.zoomValue)
+    if (this.hasZoomLevelTarget) this.zoomLevelTarget.textContent = `${Math.round(this.zoomValue * 100)}%`
+    if (this.hasZoomInButtonTarget) this.zoomInButtonTarget.disabled = this.zoomValue >= ZOOM_MAX
+    if (this.hasZoomOutButtonTarget) this.zoomOutButtonTarget.disabled = this.zoomValue <= ZOOM_MIN
+  }
+
   // Phase 10 fast-follow: "switching projects" in this app just means
   // clicking the header logo back to the Projects list (see
   // shared/_logo.html.erb) — an ordinary Turbo Drive visit that tears down
@@ -720,9 +763,14 @@ export default class extends Controller {
   // mimeType/quality let exportPdf reuse this for JPEG-encoded pages (see
   // EXPORT_PDF_PAGE_MIME) instead of PNG export's default; both need the
   // exact same SVG-building/rasterization steps ahead of that, just a
-  // different final canvas.toBlob encoding.
-  async renderPageToBlob(pageEl, { mimeType = EXPORT_MIME, quality } = {}) {
+  // different final canvas.toBlob encoding. outputWidth/outputHeight (see
+  // renderThumbnailBlob) draw that same full-resolution source scaled down
+  // into a smaller canvas, rather than rasterizing at full size and
+  // resizing afterward.
+  async renderPageToBlob(pageEl, { mimeType = EXPORT_MIME, quality, outputWidth, outputHeight } = {}) {
     const { width, height } = this.pageDimensions(pageEl)
+    const canvasWidth = outputWidth ?? width
+    const canvasHeight = outputHeight ?? height
     const svgMarkup = await this.buildExportSvgMarkup(pageEl)
     const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`
 
@@ -730,8 +778,8 @@ export default class extends Controller {
       const image = new Image()
       image.onload = () => {
         const canvas = document.createElement("canvas")
-        canvas.width = width
-        canvas.height = height
+        canvas.width = canvasWidth
+        canvas.height = canvasHeight
         const ctx = canvas.getContext("2d")
         // The comic page itself always stays white (see the doc), which
         // used to come for free from .page-canvas's own CSS background —
@@ -740,8 +788,8 @@ export default class extends Controller {
         // instead of leaving a transparent PNG background. JPEG has no
         // alpha channel at all, so this matters even more there.
         ctx.fillStyle = "#fff"
-        ctx.fillRect(0, 0, width, height)
-        ctx.drawImage(image, 0, 0, width, height)
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+        ctx.drawImage(image, 0, 0, canvasWidth, canvasHeight)
         canvas.toBlob((blob) => {
           if (blob) resolve(blob)
           else reject(new Error("canvas.toBlob returned null"))
@@ -750,6 +798,40 @@ export default class extends Controller {
       image.onerror = () => reject(new Error("Failed to load the page's SVG for export"))
       image.src = dataUrl
     })
+  }
+
+  // Projects screen thumbnail (see the plan's Phase 10 fast-follow) —
+  // reuses this same per-page rasterization pipeline against just the
+  // first page, scaled down, rather than needing any server-side
+  // rendering. Called from save_dialog_controller.js right before Save/
+  // Save As actually submits; returns null (rather than throwing) if
+  // there's no page at all to snapshot.
+  async renderThumbnailBlob() {
+    const pageEl = this.pageTargets[0]
+    if (!pageEl) return null
+
+    this.panelControllerFor(pageEl)?.deselect()
+    this.panelControllerFor(pageEl)?.exitFocus()
+    this.textControllerFor(pageEl)?.deselect()
+
+    const { width, height } = this.pageDimensions(pageEl)
+    const outputWidth = Math.min(THUMBNAIL_MAX_WIDTH, width)
+    const outputHeight = Math.round(height * (outputWidth / width))
+
+    return this.renderPageToBlob(pageEl, {
+      mimeType: THUMBNAIL_MIME,
+      quality: THUMBNAIL_QUALITY,
+      outputWidth,
+      outputHeight
+    })
+  }
+
+  // Read the same way panel_controller.js reads it (a plain data attribute
+  // on this same .editor element, not a typed Stimulus value of this
+  // controller's own) — save_dialog_controller.js needs it too, for its
+  // own thumbnail upload.
+  get directUploadUrl() {
+    return this.element.dataset.editorDirectUploadUrlValue
   }
 
   downloadBlob(blob, filename) {

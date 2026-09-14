@@ -1,6 +1,26 @@
 <li class="project-list-item">
+  <%= link_to project_path(project), class: "project-thumbnail-link", aria: { label: "Open #{project.name}" } do %>
+    <% if project.thumbnail.attached? %>
+      <%= image_tag rails_blob_path(project.thumbnail, only_path: true), class: "project-thumbnail" %>
+    <% else %>
+      <%# No thumbnail yet (never saved through the Save dialog) — the same
+          format-shaped placeholder the format cards use above. %>
+      <div class="format-preview format-preview--<%= project.format %> project-thumbnail-placeholder"></div>
+    <% end %>
+  <% end %>
+
   <span class="project-info">
-    <%= project.name %> (<%= project.format.humanize %>)
+    <%# Explicit, per-project id/for — form_with's default "project_name"
+        id would otherwise collide across every row in the list (multiple
+        projects, one <form> each, all for the same model name), leaving
+        every label associated with only the first row's field. %>
+    <%= form_with model: project, url: project_path(project), method: :patch, class: "inline-rename-form" do |form| %>
+      <%= form.label :name, "Rename #{project.name}", for: "project_name_#{project.id}", class: "visually-hidden" %>
+      <%= form.text_field :name, required: true, id: "project_name_#{project.id}" %>
+      <%= hidden_field_tag :return_to, request.fullpath, id: "return_to_#{project.id}" %>
+      <%= form.submit "Rename" %>
+    <% end %>
+    (<%= project.format.humanize %>)
     <br>
     <small>Updated <%= time_ago_in_words(project.updated_at) %> ago &middot; <%= pluralize(project.pages.size, "page") %></small>
   </span>

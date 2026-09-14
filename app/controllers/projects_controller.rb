@@ -2,9 +2,11 @@ class ProjectsController < ApplicationController
   before_action :set_project, only: %i[ show update destroy ]
 
   def index
-    # "My Comics" is the root — projects filed into a folder are found via
-    # that folder (FoldersController#show) instead of cluttering this list.
+    # "My Comics" is the default tab — every folder gets its own tab
+    # alongside it (see projects/index.html.erb's project-tabs), all
+    # rendered here so switching between them never leaves this page.
     @projects = Current.user.projects.where(folder_id: nil).includes(:pages).order(updated_at: :desc)
+    @folders = Current.user.folders.includes(projects: :pages).order(:name)
   end
 
   def show
@@ -59,7 +61,27 @@ class ProjectsController < ApplicationController
     end
 
     def project_params
-      params.require(:project).permit(:name, :folder_id)
+      permitted = params.require(:project).permit(:name, :folder_id, :thumbnail)
+      # An absent/failed client-side thumbnail render (see save_dialog_
+      # controller.js) leaves the hidden field blank rather than omitted —
+      # assigning that blank string as a signed_id would blow up trying to
+      # resolve it, and would otherwise silently wipe out a thumbnail from
+      # a previous successful save.
+      permitted.delete(:thumbnail) if permitted[:thumbnail].blank?
+      permitted
+    end
+
+    # Inline rename (see projects/_project.html.erb) submits from wherever
+    # the project list is currently being viewed (My Comics or a folder)
+    # and should return there, not into the full editor — unlike the Save
+    # dialog's own submit, which has no return_to and keeps its existing
+    # "back to the editor" redirect. Only a same-origin relative path is
+    # ever honored (never "//host/..." or an absolute URL), the same
+    # trusted-redirect-target discipline as FoldersController#create's own
+    # save_dialog_destination.
+    def safe_return_to
+      candidate = params[:return_to]
+      candidate if candidate.present? && candidate.start_with?("/") && !candidate.start_with?("//")
     end
 
     def load_editor_locals
@@ -72,9 +94,16 @@ class ProjectsController < ApplicationController
     end
 
     # "Save" — renames the project and/or moves it to a different folder.
+    # Also doubles as the inline-rename form on the project list (see
+    # projects/_project.html.erb), which only ever sets :name and always
+    # carries a return_to — a validation failure there should bounce back
+    # to that list with an alert, not into the (unrelated, and for that
+    # request possibly not even loaded) editor Save-dialog error view.
     def save_project
       if @project.update(project_params)
-        redirect_to project_path(@project), notice: "Saved."
+        redirect_to safe_return_to || project_path(@project), notice: "Saved."
+      elsif safe_return_to
+        redirect_to safe_return_to, alert: @project.errors.full_messages.to_sentence
       else
         load_editor_locals
         @open_save_dialog = true
@@ -88,7 +117,8 @@ class ProjectsController < ApplicationController
       new_project = Current.user.projects.new(
         name: project_params[:name].presence || "Copy of #{@project.name}",
         format: @project.format,
-        folder_id: project_params[:folder_id]
+        folder_id: project_params[:folder_id],
+        thumbnail: project_params[:thumbnail]
       )
 
       if new_project.save

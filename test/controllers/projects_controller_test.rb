@@ -12,27 +12,57 @@ class ProjectsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to new_session_path
   end
 
-  test "index lists only the current user's unfiled projects" do
+  # Each project's name is rendered as the value of its inline-rename text
+  # field (see projects/_project.html.erb), not as a plain text node — so
+  # presence/absence is checked via that input's value, not <li> text.
+  test "index's My Comics tab panel lists only the current user's unfiled projects" do
     get projects_path
     assert_response :success
-    assert_select "li", text: /#{projects(:unfiled).name}/
-    # filed into a folder — belongs on that folder's page, not here
-    assert_select "li", text: /#{projects(:one).name}/, count: 0
-    # a different user's project entirely
-    assert_select "li", text: /#{projects(:two).name}/, count: 0
+    assert_select "div[data-tab='unfiled'] input[value=?]", projects(:unfiled).name
+    # filed into a folder — appears in that folder's own tab panel instead
+    # (see the folder-tabs test below), not the unfiled one
+    assert_select "div[data-tab='unfiled'] input[value=?]", projects(:one).name, count: 0
+    # a different user's project and folder entirely — shouldn't appear
+    # anywhere in the response, unfiled panel or otherwise
+    assert_select "input[value=?]", projects(:two).name, count: 0
   end
 
-  test "index does not list a project after it's moved into a folder" do
+  # Folders are tabs on this same page (see project_tabs_controller.js) —
+  # moving a project into a folder moves it from the "My Comics" tab's own
+  # panel into that folder's, not out of the response body entirely (every
+  # folder's contents are always rendered here, just hidden until their tab
+  # is selected).
+  test "moving a project into a folder moves it from the My Comics tab panel into that folder's" do
     project = @user.projects.create!(name: "Moving", format: :comic)
     folder = @user.folders.create!(name: "Sketchbook")
 
     get projects_path
-    assert_select "li", text: /Moving/
+    assert_select "div[data-tab='unfiled'] input[value=?]", "Moving"
+    assert_select "div[data-tab=?] input[value=?]", "folder-#{folder.id}", "Moving", count: 0
 
     project.update!(folder: folder)
 
     get projects_path
-    assert_select "li", text: /Moving/, count: 0
+    assert_select "div[data-tab='unfiled'] input[value=?]", "Moving", count: 0
+    assert_select "div[data-tab=?] input[value=?]", "folder-#{folder.id}", "Moving"
+  end
+
+  test "index renders a tab and panel for each of the current user's folders, but not another user's" do
+    get projects_path
+
+    assert_select "button.project-tab", text: folders(:one).name
+    assert_select "div[data-tab=?] input[value=?]", "folder-#{folders(:one).id}", projects(:one).name
+
+    assert_select "button.project-tab", text: folders(:two).name, count: 0
+    assert_select "div[data-tab=?]", "folder-#{folders(:two).id}", count: 0
+  end
+
+  test "index shows no tab bar at all when the user has no folders" do
+    @user.folders.destroy_all
+
+    get projects_path
+
+    assert_select ".project-tabs", count: 0
   end
 
   test "index orders projects by most recently updated first" do
@@ -324,5 +354,68 @@ class ProjectsControllerTest < ActionDispatch::IntegrationTest
       patch project_path(projects(:two)), params: { save_mode: "save_as", project: { name: "Stolen" } }
     end
     assert_response :not_found
+  end
+
+  def create_blob
+    ActiveStorage::Blob.create_and_upload!(
+      io: File.open(Rails.root.join("test/fixtures/files/sample_photo.png")),
+      filename: "thumb.png",
+      content_type: "image/png"
+    )
+  end
+
+  test "update attaches a thumbnail given a signed blob id" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+    blob = create_blob
+
+    patch project_path(project), params: { project: { name: "Draft", thumbnail: blob.signed_id } }
+
+    assert project.reload.thumbnail.attached?
+  end
+
+  test "update ignores a blank thumbnail instead of erroring or clearing an existing one" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+    project.thumbnail.attach(create_blob)
+
+    patch project_path(project), params: { project: { name: "Renamed", thumbnail: "" } }
+
+    assert_redirected_to project_path(project)
+    assert project.reload.thumbnail.attached?
+  end
+
+  test "save_as carries the original's thumbnail over to the copy when one was just uploaded" do
+    project = @user.projects.create!(name: "Original", format: :comic)
+    project.pages.create!(position: 1, name: "Page 1")
+    blob = create_blob
+
+    patch project_path(project), params: { save_mode: "save_as", project: { name: "Copy", thumbnail: blob.signed_id } }
+
+    new_project = @user.projects.order(:created_at).last
+    assert new_project.thumbnail.attached?
+  end
+
+  test "update with a same-origin return_to redirects there instead of into the editor" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+
+    patch project_path(project), params: { project: { name: "Renamed" }, return_to: projects_path }
+
+    assert_redirected_to projects_path
+  end
+
+  test "update rejects a protocol-relative return_to and falls back to the editor" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+
+    patch project_path(project), params: { project: { name: "Renamed" }, return_to: "//evil.test/steal" }
+
+    assert_redirected_to project_path(project)
+  end
+
+  test "update with a blank name and a return_to redirects there with an alert, instead of rendering the editor" do
+    project = @user.projects.create!(name: "Draft", format: :comic)
+
+    patch project_path(project), params: { project: { name: "" }, return_to: projects_path }
+
+    assert_redirected_to projects_path
+    assert_equal "Draft", project.reload.name
   end
 end

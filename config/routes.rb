@@ -19,7 +19,12 @@ Rails.application.routes.draw do
       end
     end
   end
-  resources :folders, only: %i[ index show create ]
+  # index/show were dropped when folders became tabs on the Projects
+  # screen itself (see ProjectsController#index) — every folder and its
+  # contents are now viewable from the root page, so there's no separate
+  # page for them to route to anymore. create is unchanged (inline folder
+  # creation from the Save dialog).
+  resources :folders, only: %i[ create ]
 
   # Defines the root path route ("/")
   root "projects#index"

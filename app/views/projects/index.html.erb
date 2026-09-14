@@ -24,12 +24,31 @@
 </div>
 
 <h2>My Comics</h2>
-<p><%= link_to "Folders", folders_path %></p>
 
-<% if @projects.empty? %>
-  <p>No comics yet — pick a format above to start one.</p>
+<%# Folders are tabs right here rather than a separate page (see
+    ProjectsController#index and project_tabs_controller.js) — every
+    folder and everything filed into it is viewable without leaving this
+    page. With no folders yet there's nothing to switch between, so skip
+    the tab bar entirely rather than showing a single redundant tab. %>
+<% if @folders.any? %>
+  <div data-controller="project-tabs">
+    <nav class="project-tabs">
+      <button type="button" class="project-tab project-tab--active" data-project-tabs-target="tab" data-tab="unfiled" data-action="click->project-tabs#select">My Comics</button>
+      <% @folders.each do |folder| %>
+        <button type="button" class="project-tab" data-project-tabs-target="tab" data-tab="folder-<%= folder.id %>" data-action="click->project-tabs#select"><%= folder.name %></button>
+      <% end %>
+    </nav>
+
+    <div data-project-tabs-target="panel" data-tab="unfiled">
+      <%= render "projects/project_list", projects: @projects, empty_message: "No comics yet — pick a format above to start one." %>
+    </div>
+
+    <% @folders.each do |folder| %>
+      <div hidden data-project-tabs-target="panel" data-tab="folder-<%= folder.id %>">
+        <%= render "projects/project_list", projects: folder.projects, empty_message: "Nothing in this folder yet." %>
+      </div>
+    <% end %>
+  </div>
 <% else %>
-  <ul class="project-list">
-    <%= render partial: "projects/project", collection: @projects, as: :project %>
-  </ul>
+  <%= render "projects/project_list", projects: @projects, empty_message: "No comics yet — pick a format above to start one." %>
 <% end %>

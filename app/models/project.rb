@@ -3,6 +3,15 @@ class Project < ApplicationRecord
   belongs_to :folder, optional: true
   has_many :pages, -> { order(:position) }, dependent: :destroy
 
+  # Projects screen thumbnail (see the plan's Phase 10 fast-follow). This
+  # is a small snapshot the client renders from the first page's own
+  # rasterization pipeline (see editor_controller.js#renderThumbnailBlob)
+  # and uploads whenever Save/Save As is actually submitted — the server's
+  # role is only to store the resulting blob, not to render anything
+  # itself, since there's no headless-browser/SVG-rendering tool in this
+  # stack and the client already has a working, tested pipeline for this.
+  has_one_attached :thumbnail
+
   enum :format, { comic: 0, manga_b5: 1, newspaper_strip: 2, webtoon: 3 }
 
   validates :name, presence: true

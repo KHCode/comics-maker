@@ -67,4 +67,16 @@ class ProjectTest < ActiveSupport::TestCase
     assert Project.new(valid_attributes.merge(format: :newspaper_strip)).paginated?
     assert_not Project.new(valid_attributes.merge(format: :webtoon)).paginated?
   end
+
+  test "has no thumbnail by default, and can have one attached" do
+    project = Project.create!(valid_attributes)
+    assert_not project.thumbnail.attached?
+
+    project.thumbnail.attach(
+      io: File.open(Rails.root.join("test/fixtures/files/sample_photo.png")),
+      filename: "thumb.png",
+      content_type: "image/png"
+    )
+    assert project.thumbnail.attached?
+  end
 end

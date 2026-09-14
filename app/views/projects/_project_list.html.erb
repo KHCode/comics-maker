@@ -1,0 +1,7 @@
+<% if projects.empty? %>
+  <p><%= empty_message %></p>
+<% else %>
+  <ul class="project-list">
+    <%= render partial: "projects/project", collection: projects, as: :project %>
+  </ul>
+<% end %>

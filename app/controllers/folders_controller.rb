@@ -1,13 +1,4 @@
 class FoldersController < ApplicationController
-  def index
-    @folders = Current.user.folders.order(:name)
-  end
-
-  def show
-    @folder = Current.user.folders.find(params[:id])
-    @projects = @folder.projects.includes(:pages).order(updated_at: :desc)
-  end
-
   # Used inline from the Save dialog ("create folders inline" per the doc).
   # When project_id is present (i.e. created from within a project's Save
   # dialog), we return to that project with the dialog reopened rather than
