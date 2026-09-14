@@ -24,6 +24,12 @@ const THUMBNAIL_QUALITY = 0.8
 const ZOOM_MIN = 0.5
 const ZOOM_MAX = 2.5
 const ZOOM_STEP = 0.25
+// A rough, untuned starting point — trackpad wheel deltaY magnitudes vary
+// a lot by device/OS/browser and can't be verified against real hardware
+// in this sandbox (the same caveat the plan's own open questions note for
+// stylus pressure). Picked so an ordinary two-finger trackpad pinch swings
+// across roughly the whole zoom range, not a single click's worth.
+const WHEEL_ZOOM_SENSITIVITY = 0.01
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
@@ -94,6 +100,27 @@ export default class extends Controller {
     this.syncTextLayerButton()
     this.syncUndoRedoButtons()
     this.applyZoom()
+
+    // Trackpad/mouse ctrl+scroll and touchscreen pinch (see
+    // handleWheelZoom/handleTouchStart/handleTouchMove) — both are on top
+    // of the +/- buttons, not a replacement for them, so this app's
+    // zooming works the same whether or not the input device supports
+    // gestures at all.
+    this.boundHandleWheelZoom = this.handleWheelZoom.bind(this)
+    this.boundHandleTouchStart = this.handleTouchStart.bind(this)
+    this.boundHandleTouchMove = this.handleTouchMove.bind(this)
+    // { passive: false } on all three: each one calls preventDefault() on
+    // exactly the gesture it recognizes as "zoom, not scroll" (see below),
+    // which a passive listener isn't allowed to do.
+    this.editorCanvasElement?.addEventListener("wheel", this.boundHandleWheelZoom, { passive: false })
+    this.editorCanvasElement?.addEventListener("touchstart", this.boundHandleTouchStart, { passive: false })
+    this.editorCanvasElement?.addEventListener("touchmove", this.boundHandleTouchMove, { passive: false })
+  }
+
+  disconnect() {
+    this.editorCanvasElement?.removeEventListener("wheel", this.boundHandleWheelZoom)
+    this.editorCanvasElement?.removeEventListener("touchstart", this.boundHandleTouchStart)
+    this.editorCanvasElement?.removeEventListener("touchmove", this.boundHandleTouchMove)
   }
 
   switchMode(event) {
@@ -492,6 +519,52 @@ export default class extends Controller {
     if (this.hasZoomLevelTarget) this.zoomLevelTarget.textContent = `${Math.round(this.zoomValue * 100)}%`
     if (this.hasZoomInButtonTarget) this.zoomInButtonTarget.disabled = this.zoomValue >= ZOOM_MAX
     if (this.hasZoomOutButtonTarget) this.zoomOutButtonTarget.disabled = this.zoomValue <= ZOOM_MIN
+  }
+
+  // Trackpad pinch gestures and literal ctrl+scroll-wheel both arrive as
+  // plain "wheel" events with ctrlKey set — this is the standard browser
+  // convention (not something read from a device-type check), the same
+  // signal a native page zoom would use, which is exactly why it has to be
+  // preventDefault()'d here: without that, the browser would zoom the
+  // whole page instead of just this canvas. A plain wheel/scroll (no
+  // ctrlKey) is left completely alone, so scrolling through a tall page
+  // list still works exactly as before.
+  handleWheelZoom(event) {
+    if (!event.ctrlKey) return
+    event.preventDefault()
+    this.setZoom(this.zoomValue - event.deltaY * WHEEL_ZOOM_SENSITIVITY)
+  }
+
+  // Two-finger touchscreen pinch. Deliberately keyed off touch *count*
+  // (exactly 2), not any other heuristic — a single-finger touch here is
+  // always some other gesture already handled elsewhere (drawing a
+  // stroke, dragging a panel, tapping a button), and must keep working
+  // completely untouched, so this only ever engages once a second finger
+  // actually lands.
+  handleTouchStart(event) {
+    if (event.touches.length !== 2) {
+      this.pinchStartDistance = null
+      return
+    }
+    this.pinchStartDistance = this.touchDistance(event.touches)
+    this.pinchStartZoom = this.zoomValue
+  }
+
+  handleTouchMove(event) {
+    if (event.touches.length !== 2 || this.pinchStartDistance == null) return
+    event.preventDefault() // otherwise the browser also pinch-zooms the whole page
+    const scale = this.touchDistance(event.touches) / this.pinchStartDistance
+    this.setZoom(this.pinchStartZoom * scale)
+  }
+
+  touchDistance(touches) {
+    const [ a, b ] = touches
+    return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY)
+  }
+
+  get editorCanvasElement() {
+    if (!this._editorCanvasElement) this._editorCanvasElement = this.element.querySelector(".editor-canvas")
+    return this._editorCanvasElement
   }
 
   // Phase 10 fast-follow: "switching projects" in this app just means
