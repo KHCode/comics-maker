@@ -15,6 +15,17 @@ class BucketFillTest < ApplicationSystemTestCase
     "pts" => [ [ 75, 75 ], [ 225, 75 ], [ 225, 225 ], [ 75, 225 ], [ 75, 75 ] ]
   }
 
+  # A straight line from the panel's top edge to its bottom edge, splitting
+  # the 300x300 panel into a left half and a right half — each is its own
+  # bound region even though each also touches the panel's own edge on
+  # its own remaining three sides (the bug this regression test covers:
+  # reaching the panel's edge used to always mean "color the whole
+  # background", regardless of ink also bounding the region elsewhere).
+  DIVIDER_STROKE = {
+    "tool" => "pen", "color" => "#1c1a17", "w" => 8, "op" => 1,
+    "pts" => [ [ 150, 0 ], [ 150, 300 ] ]
+  }
+
   def sign_in(user)
     visit new_session_path
     fill_in "Email", with: user.email
@@ -67,6 +78,20 @@ class BucketFillTest < ApplicationSystemTestCase
   def click_near_corner
     rect = panel_polygon.native.size
     panel_polygon.click(x: -(rect.width * 0.425).to_i, y: -(rect.height * 0.425).to_i)
+  end
+
+  # Page-unit (150, 150) is the panel's own center (element offset 0,0);
+  # each half's own center sits 75 units to either side of that, which is
+  # 25% of the panel's own 300-unit width away — expressed as a fraction
+  # of the polygon's rendered size so it holds regardless of screen size.
+  def click_left_half
+    rect = panel_polygon.native.size
+    panel_polygon.click(x: -(rect.width * 0.25).to_i, y: 0)
+  end
+
+  def click_right_half
+    rect = panel_polygon.native.size
+    panel_polygon.click(x: (rect.width * 0.25).to_i, y: 0)
   end
 
   def stored_panel
@@ -143,6 +168,43 @@ class BucketFillTest < ApplicationSystemTestCase
     panel = stored_panel
     assert_equal "#2f9e52", panel["bg"]
     assert_equal [], panel["fills"]
+  end
+
+  test "a line that touches the panel's edge on both ends bounds a region there too (regression)" do
+    user = User.create!(name: "Painter", email: "bucket5@kapow.test", password: "password123")
+    project = create_project_with_panel(user, strokes: [ DIVIDER_STROKE ])
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_draw_mode
+    find("polygon.panel-outline[data-panel-id='p1']").click
+    select_bucket_tool
+    select_ink_color("#2f6fed")
+
+    click_left_half
+
+    panel = stored_panel
+    assert_nil panel["bg"]
+    assert_equal 1, panel["fills"].length
+    left_fill = panel["fills"].first
+    # the left half only: roughly x 0..150, the full 0..300 height
+    assert_in_delta 0, left_fill["x"], 5
+    assert_in_delta 0, left_fill["y"], 5
+    assert_in_delta 150, left_fill["w"], 10
+    assert_in_delta 300, left_fill["h"], 10
+
+    select_ink_color("#e0452d")
+    click_right_half
+
+    panel = stored_panel
+    assert_nil panel["bg"]
+    assert_equal 2, panel["fills"].length
+    right_fill = panel["fills"].last
+    # the right half only: roughly x 150..300
+    assert_in_delta 150, right_fill["x"], 10
+    assert_in_delta 0, right_fill["y"], 5
+    assert_in_delta 150, right_fill["w"], 10
+    assert_in_delta 300, right_fill["h"], 10
   end
 
   test "undo reverses a bucket-filled background" do

@@ -3,26 +3,23 @@
 // dependency — the caller rasterizes a panel's own shape and ink strokes
 // into a plain label grid first (necessarily DOM/Canvas-bound, so that
 // part lives in panel_controller.js instead), then hands it to
-// floodFillMask here.
+// bucketFillRegion/floodFillMask here.
 //
 // Labels, one per grid cell:
 //   0 = open (fillable)
-//   1 = ink (a drawn stroke) — blocks the fill, but staying within it still
-//       counts as "enclosed"
+//   1 = ink (a drawn stroke) — blocks the fill
 //   2 = boundary (outside the panel's own shape, including a 1-cell pad
-//       around the whole grid) — reaching this means the region reaches
-//       the panel's real edge, i.e. it is NOT enclosed by ink.
-//
-// Distinguishing label 1 from label 2 is what lets one tool do two
-// different things: a region enclosed only by ink becomes its own filled
-// shape; a region that reaches the panel's actual edge (nothing enclosing
-// it) instead sets the whole panel's background color — exactly the "at
-// least a background color, but really a paint bucket" the feature was
-// asked for, using a single reachability test rather than two separate
-// code paths the user has to choose between.
+//       around the whole grid) — also blocks the fill, the same as ink;
+//       the panel's own edge is a wall too, not just a stopping point to
+//       take note of and keep going past.
 
 // Returns null if the start cell isn't open (the click landed exactly on
 // ink, or outside the panel) — there's no sensible region to fill there.
+// `touchedBoundaryCells` is the set of boundary-cell indices the fill
+// actually reached — not just whether it reached any, but which ones —
+// so bucketFillRegion below can tell "reached this whole side of the
+// panel" apart from "reached the panel's edge only where ink didn't
+// block it".
 export function floodFillMask(labels, width, height, startX, startY) {
   if (startX < 0 || startY < 0 || startX >= width || startY >= height) return null
   const startIndex = startY * width + startX
@@ -30,7 +27,7 @@ export function floodFillMask(labels, width, height, startX, startY) {
 
   const filled = new Uint8Array(width * height)
   filled[startIndex] = 1
-  let touchedBoundary = false
+  const touchedBoundaryCells = new Set()
 
   // Iterative (an explicit stack, not recursion) — a large panel at a
   // reasonable raster scale can easily exceed a few thousand open cells,
@@ -47,7 +44,7 @@ export function floodFillMask(labels, width, height, startX, startY) {
       const nIndex = ny * width + nx
       const label = labels[nIndex]
       if (label === 2) {
-        touchedBoundary = true
+        touchedBoundaryCells.add(nIndex)
         continue
       }
       if (label === 1 || filled[nIndex]) continue
@@ -56,7 +53,43 @@ export function floodFillMask(labels, width, height, startX, startY) {
     }
   }
 
-  return { filled, touchedBoundary }
+  return { filled, touchedBoundaryCells }
+}
+
+// The actual decision behind the paint bucket: does this click's region
+// become its own filled shape, or does it mean "color the whole panel's
+// background"?
+//
+// A region only reaching the panel's real edge is not, on its own, reason
+// enough to call it "background" — a shape drawn with one open side (a
+// line that starts at the panel's edge and ends at the panel's edge, e.g.
+// cutting the panel in half, or an alcove open on one side) is still a
+// bound region as far as the user is concerned, and clicking inside it
+// should color only it, not the entire panel.
+//
+// The real test: run the flood fill twice from the same point — once
+// respecting ink as a wall (the real fill), and once with ink relabeled
+// as open (as if none had been drawn at all). If ink isn't actually
+// blocking this region off from any part of the panel's own edge, both
+// passes reach exactly the same boundary cells — this is the ordinary
+// open "desk" around whatever's drawn elsewhere, so color the whole
+// background. If the real pass reaches *fewer* boundary cells than the
+// no-ink pass, some ink is standing between this region and part of the
+// panel's edge — that's what makes it a bound region, whether or not it
+// also happens to touch the edge on its own remaining sides.
+export function bucketFillRegion(labels, width, height, startX, startY) {
+  const real = floodFillMask(labels, width, height, startX, startY)
+  if (!real) return null
+
+  const labelsIgnoringInk = labels.map((label) => (label === 1 ? 0 : label))
+  const withoutInk = floodFillMask(labelsIgnoringInk, width, height, startX, startY)
+
+  // withoutInk is only ever null if `real` already was (same start cell,
+  // same out-of-range checks) — real being non-null here guarantees this
+  // is too, but the check costs nothing and avoids relying on that.
+  const isBackground = !!withoutInk && real.touchedBoundaryCells.size === withoutInk.touchedBoundaryCells.size
+
+  return { filled: real.filled, isBackground }
 }
 
 // The filled mask's own tight bounding box, in grid coordinates — used to

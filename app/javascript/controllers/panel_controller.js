@@ -12,7 +12,7 @@ import {
   removeVertex
 } from "kapow/panel_geometry"
 import { INK_TOOLS, INK_SIZES, INK_COLORS, pressureOrDefault, strokeWidth, eraseStrokes, hexToRgb } from "kapow/ink"
-import { floodFillMask, filledBounds } from "kapow/flood_fill"
+import { bucketFillRegion, filledBounds } from "kapow/flood_fill"
 import {
   defaultPhoto,
   photoUrl,
@@ -816,12 +816,16 @@ export default class extends Controller {
 
   // Paint bucket: a single click, not a drag. Rasterizes the focused
   // panel's own shape and ink strokes into a label grid (see
-  // buildBucketFillLabels), flood-fills from the click point (see
-  // kapow/flood_fill.js — the pure, unit-tested part of this), and either
-  // sets the panel's whole background color (an unenclosed region, one
-  // that reaches the panel's real edge) or adds one new small filled-
-  // region image (a region fully enclosed by ink). A click that lands
-  // exactly on ink, or outside the panel, does nothing.
+  // buildBucketFillLabels), then hands it to kapow/flood_fill.js's
+  // bucketFillRegion (the pure, unit-tested part of this) to decide
+  // between the tool's two behaviors: sets the panel's whole background
+  // color when ink doesn't cut this region off from any part of the
+  // panel's own edge (the ordinary "open desk" case, however much of the
+  // edge it does or doesn't happen to touch), or adds one new small
+  // filled-region image when it does (a region ink genuinely bounds,
+  // whether that's a fully-closed loop or a shape that's open on one or
+  // more of the panel's own sides). A click that lands exactly on ink, or
+  // outside the panel, does nothing.
   startBucketFill(event, panelId) {
     const store = this.documentStoreController.store
     const panel = store.getState().panels.find((p) => p.id === panelId)
@@ -832,12 +836,12 @@ export default class extends Controller {
     const startX = Math.round((click.x - grid.originX) * grid.scale) + 1
     const startY = Math.round((click.y - grid.originY) * grid.scale) + 1
 
-    const result = floodFillMask(grid.labels, grid.width, grid.height, startX, startY)
+    const result = bucketFillRegion(grid.labels, grid.width, grid.height, startX, startY)
     if (!result) return
 
     const color = this.currentDrawColor
 
-    if (result.touchedBoundary) {
+    if (result.isBackground) {
       store.mutate((state) => {
         const target = state.panels.find((p) => p.id === panelId)
         if (target) target.bg = color
