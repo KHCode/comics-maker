@@ -11,7 +11,8 @@ import {
   insertMidpointVertex,
   removeVertex
 } from "kapow/panel_geometry"
-import { INK_TOOLS, INK_SIZES, INK_COLORS, pressureOrDefault, strokeWidth, eraseStrokes } from "kapow/ink"
+import { INK_TOOLS, INK_SIZES, INK_COLORS, pressureOrDefault, strokeWidth, eraseStrokes, hexToRgb } from "kapow/ink"
+import { floodFillMask, filledBounds } from "kapow/flood_fill"
 import {
   defaultPhoto,
   photoUrl,
@@ -38,6 +39,13 @@ const BAR_BUTTON_SIZE = 44
 const BAR_BUTTON_GAP = 8
 const BAR_MARGIN_ABOVE = 12
 const DUPLICATE_OFFSET = 24
+
+// Paint bucket (see startBucketFill) — raster pixels per page unit used
+// only for that click's own one-off flood-fill computation, never stored.
+// High enough that a typical ink stroke width (4-14 units, see INK_SIZES)
+// rasterizes as a solid multi-pixel-thick wall the fill can't leak
+// through; not so high that flood-filling a full-bleed panel is slow.
+const BUCKET_FILL_SCALE = 2
 
 // How much margin (as a fraction of the focused panel's own width/height)
 // stays visible around it when zoomed in — just enough to see past its
@@ -140,7 +148,7 @@ export default class extends Controller {
   }
 
   clear() {
-    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-background, :scope > .panel-handle, :scope > .photo-handle, :scope > .panel-floating-bar, :scope > .panel-focus-dim, :scope > .panel-photo, :scope > .panel-ink, :scope > defs").forEach((el) => el.remove())
+    this.canvasTarget.querySelectorAll(":scope > polygon.panel-outline, :scope > .panel-background, :scope > .panel-handle, :scope > .photo-handle, :scope > .panel-floating-bar, :scope > .panel-focus-dim, :scope > .panel-photo, :scope > .panel-fills, :scope > .panel-ink, :scope > defs").forEach((el) => el.remove())
     this._defs = null
     this._floatingBar = null
   }
@@ -160,10 +168,16 @@ export default class extends Controller {
     // earlier, and therefore visually beneath this one — see
     // bringToFront/sendToBack) has its ink and outline actually hidden by
     // this one rather than showing through a transparent panel interior.
+    // Its own fill defaults to white via CSS (see .panel-background) but
+    // an inline style (set below) wins over that once the paint bucket
+    // has set panel.bg to something else — a plain SVG presentation
+    // attribute couldn't do this, since any CSS class rule always beats
+    // one regardless of selector specificity; only an inline style does.
     const background = document.createElementNS(SVG_NS, "polygon")
     background.setAttribute("points", pointsAttr)
     background.setAttribute("class", "panel-background")
     background.dataset.panelId = panel.id
+    if (panel.bg) background.style.fill = panel.bg
     this.canvasTarget.appendChild(background)
 
     // Photo sits between the opaque background and the ink layer — under
@@ -176,6 +190,22 @@ export default class extends Controller {
     photoGroup.dataset.panelId = panel.id
     this.canvasTarget.appendChild(photoGroup)
     this.renderPhotoGroup(panel.id, panel)
+
+    // Paint-bucket fills (see startBucketFill) sit above the photo but
+    // below the ink strokes that enclosed them — so drawing a boundary
+    // loop, then filling inside it, always leaves that boundary crisply
+    // visible on top of the fill color, the same way real inking/coloring
+    // order works regardless of which was actually drawn first.
+    const fillsGroup = document.createElementNS(SVG_NS, "g")
+    fillsGroup.setAttribute("class", "panel-fills")
+    fillsGroup.setAttribute("clip-path", `url(#${clipId})`)
+    fillsGroup.dataset.panelId = panel.id
+    this.canvasTarget.appendChild(fillsGroup)
+    // panel.fills may be missing entirely on a panel saved before this
+    // feature existed — treated as "no fills yet", the same as any other
+    // page-JSON field a schema addition might introduce (see Page#data's
+    // own schema_version comment).
+    this.renderFillsGroup(panel.id, panel.fills || [])
 
     // Ink is appended (and clipped to the panel's own shape) before the
     // outline polygon below, so the panel's border always renders crisp on
@@ -261,6 +291,26 @@ export default class extends Controller {
 
     inner.appendChild(image)
     group.appendChild(inner)
+  }
+
+  // Rebuilds one panel's paint-bucket fills as plain positioned <image>
+  // elements (each one's own already-colored, already-cropped PNG — see
+  // startBucketFill) — no per-fill transform needed the way photo has
+  // (rotate/flip/pan), since a fill is never anything but "exactly this
+  // rectangle of exactly these pixels".
+  renderFillsGroup(panelId, fills) {
+    const group = this.canvasTarget.querySelector(`.panel-fills[data-panel-id="${panelId}"]`)
+    if (!group) return
+    group.replaceChildren(...fills.map((fill) => {
+      const image = document.createElementNS(SVG_NS, "image")
+      image.setAttribute("href", fill.dataUrl)
+      image.setAttribute("x", fill.x)
+      image.setAttribute("y", fill.y)
+      image.setAttribute("width", fill.w)
+      image.setAttribute("height", fill.h)
+      image.setAttribute("preserveAspectRatio", "none")
+      return image
+    }))
   }
 
   // 8 drag handles (4 corners + 4 edge midpoints) for directly resizing
@@ -550,7 +600,9 @@ export default class extends Controller {
       id: generateId(),
       pts: translatePoints(panel.pts, DUPLICATE_OFFSET, DUPLICATE_OFFSET),
       strokes: panel.strokes.map((stroke) => ({ ...stroke, pts: stroke.pts.map(([ x, y ]) => [ x, y ]) })),
-      photo: panel.photo ? { ...panel.photo } : null
+      photo: panel.photo ? { ...panel.photo } : null,
+      bg: panel.bg ?? null,
+      fills: (panel.fills || []).map((fill) => ({ ...fill }))
     }
 
     store.mutate((state) => {
@@ -649,12 +701,22 @@ export default class extends Controller {
     // Ink (and, later, photo) moves with the panel — see the doc: "drag to
     // move (strokes and photo move with it)" — so the same translation
     // applied to the panel's pts is applied to every stroke's pts too.
+    // Paint-bucket fills (see startBucketFill) get the same treatment —
+    // each one is anchored to a specific rectangle of page units, which
+    // would otherwise visibly detach from the ink loop that bounds it the
+    // moment the panel moves.
     this.beginDrag(
       panelId,
       (originalPts, current) => translatePoints(originalPts, current.x - startPoint.x, current.y - startPoint.y),
       (originalStrokes, current) => originalStrokes.map((stroke) => ({
         ...stroke,
         pts: translatePoints(stroke.pts, current.x - startPoint.x, current.y - startPoint.y)
+      })),
+      (originalPhoto) => originalPhoto,
+      (originalFills, current) => originalFills.map((fill) => ({
+        ...fill,
+        x: fill.x + (current.x - startPoint.x),
+        y: fill.y + (current.y - startPoint.y)
       }))
     )
   }
@@ -662,10 +724,13 @@ export default class extends Controller {
   // Draw mode's actual drawing gesture, captured once a panel is already
   // zoomed into — Pen/Marker append a new stroke; Eraser instead
   // splits/removes segments of existing strokes it passes over (see
-  // startErasing / kapow/ink.js#eraseStrokes).
+  // startErasing / kapow/ink.js#eraseStrokes); Bucket is a one-shot click,
+  // not a drag gesture at all (see startBucketFill).
   startInkGesture(event, panelId) {
     if (this.currentDrawTool === "eraser") {
       this.startErasing(event, panelId)
+    } else if (this.currentDrawTool === "bucket") {
+      this.startBucketFill(event, panelId)
     } else {
       this.startStroke(event, panelId)
     }
@@ -747,6 +812,154 @@ export default class extends Controller {
 
     window.addEventListener("pointermove", onMove)
     window.addEventListener("pointerup", onUp)
+  }
+
+  // Paint bucket: a single click, not a drag. Rasterizes the focused
+  // panel's own shape and ink strokes into a label grid (see
+  // buildBucketFillLabels), flood-fills from the click point (see
+  // kapow/flood_fill.js — the pure, unit-tested part of this), and either
+  // sets the panel's whole background color (an unenclosed region, one
+  // that reaches the panel's real edge) or adds one new small filled-
+  // region image (a region fully enclosed by ink). A click that lands
+  // exactly on ink, or outside the panel, does nothing.
+  startBucketFill(event, panelId) {
+    const store = this.documentStoreController.store
+    const panel = store.getState().panels.find((p) => p.id === panelId)
+    if (!panel) return
+
+    const click = this.svgPoint(event)
+    const grid = this.buildBucketFillLabels(panel)
+    const startX = Math.round((click.x - grid.originX) * grid.scale) + 1
+    const startY = Math.round((click.y - grid.originY) * grid.scale) + 1
+
+    const result = floodFillMask(grid.labels, grid.width, grid.height, startX, startY)
+    if (!result) return
+
+    const color = this.currentDrawColor
+
+    if (result.touchedBoundary) {
+      store.mutate((state) => {
+        const target = state.panels.find((p) => p.id === panelId)
+        if (target) target.bg = color
+      })
+      return
+    }
+
+    const fill = this.rasterizeBucketFillImage(result.filled, grid, color)
+    if (!fill) return
+    store.mutate((state) => {
+      const target = state.panels.find((p) => p.id === panelId)
+      if (!target) return
+      if (!target.fills) target.fills = []
+      target.fills.push(fill)
+    })
+  }
+
+  // Two solid-color offscreen renders read back as plain alpha masks —
+  // simpler and far more robust than trying to compute "is this point
+  // inside the polygon, and near which stroke" analytically for arbitrary
+  // freehand paths; the browser's own canvas fill/stroke rules (the same
+  // nonzero-winding polygon fill and round-joined stroking already used
+  // elsewhere in this app) do all the actual geometry work. A 1-cell
+  // padding border around the whole grid is pre-labeled "boundary" too, so
+  // a plain rectangular (Box) panel's own true edge is treated exactly
+  // the same as a curved/pointed (Round/Burst) panel's real outline,
+  // rather than needing separate logic for "reached the grid edge" vs
+  // "stepped outside the polygon".
+  buildBucketFillLabels(panel) {
+    const scale = BUCKET_FILL_SCALE
+    const { minX, minY, maxX, maxY } = boundingBox(panel.pts)
+    const innerWidth = Math.max(1, Math.round((maxX - minX) * scale))
+    const innerHeight = Math.max(1, Math.round((maxY - minY) * scale))
+    const width = innerWidth + 2
+    const height = innerHeight + 2
+    const toRasterX = (x) => (x - minX) * scale + 1
+    const toRasterY = (y) => (y - minY) * scale + 1
+
+    const panelCanvas = document.createElement("canvas")
+    panelCanvas.width = width
+    panelCanvas.height = height
+    const panelCtx = panelCanvas.getContext("2d")
+    panelCtx.fillStyle = "#fff"
+    panelCtx.beginPath()
+    panel.pts.forEach(([ x, y ], i) => {
+      const rx = toRasterX(x)
+      const ry = toRasterY(y)
+      if (i === 0) panelCtx.moveTo(rx, ry)
+      else panelCtx.lineTo(rx, ry)
+    })
+    panelCtx.closePath()
+    panelCtx.fill()
+    const insidePanelAlpha = panelCtx.getImageData(0, 0, width, height).data
+
+    const inkCanvas = document.createElement("canvas")
+    inkCanvas.width = width
+    inkCanvas.height = height
+    const inkCtx = inkCanvas.getContext("2d")
+    inkCtx.lineCap = "round"
+    inkCtx.lineJoin = "round"
+    inkCtx.strokeStyle = "#fff"
+    for (const stroke of panel.strokes) {
+      if (stroke.pts.length < 2) continue
+      inkCtx.lineWidth = Math.max(1, stroke.w * scale)
+      inkCtx.beginPath()
+      stroke.pts.forEach(([ x, y ], i) => {
+        const rx = toRasterX(x)
+        const ry = toRasterY(y)
+        if (i === 0) inkCtx.moveTo(rx, ry)
+        else inkCtx.lineTo(rx, ry)
+      })
+      inkCtx.stroke()
+    }
+    const inkAlpha = inkCtx.getImageData(0, 0, width, height).data
+
+    const labels = new Uint8Array(width * height)
+    for (let i = 0; i < width * height; i++) {
+      const insidePanel = insidePanelAlpha[i * 4 + 3] > 0
+      const isInk = inkAlpha[i * 4 + 3] > 0
+      labels[i] = !insidePanel ? 2 : isInk ? 1 : 0
+    }
+
+    return { labels, width, height, originX: minX, originY: minY, scale }
+  }
+
+  // Crops the flood fill's own filled mask down to its tight bounding box
+  // (see kapow/flood_fill.js#filledBounds) and paints just that region as
+  // an opaque PNG, positioned/sized in page units for renderFillsGroup —
+  // storing one small image per fill rather than a full panel-sized one.
+  rasterizeBucketFillImage(filled, grid, color) {
+    const bounds = filledBounds(filled, grid.width, grid.height)
+    if (!bounds) return null
+
+    const cropWidth = bounds.maxX - bounds.minX + 1
+    const cropHeight = bounds.maxY - bounds.minY + 1
+    const canvas = document.createElement("canvas")
+    canvas.width = cropWidth
+    canvas.height = cropHeight
+    const ctx = canvas.getContext("2d")
+    const imageData = ctx.createImageData(cropWidth, cropHeight)
+    const [ r, g, b ] = hexToRgb(color)
+    for (let y = 0; y < cropHeight; y++) {
+      for (let x = 0; x < cropWidth; x++) {
+        const srcIndex = (y + bounds.minY) * grid.width + (x + bounds.minX)
+        if (!filled[srcIndex]) continue
+        const destIndex = (y * cropWidth + x) * 4
+        imageData.data[destIndex] = r
+        imageData.data[destIndex + 1] = g
+        imageData.data[destIndex + 2] = b
+        imageData.data[destIndex + 3] = 255
+      }
+    }
+    ctx.putImageData(imageData, 0, 0)
+
+    return {
+      id: generateId(),
+      x: grid.originX + (bounds.minX - 1) / grid.scale,
+      y: grid.originY + (bounds.minY - 1) / grid.scale,
+      w: cropWidth / grid.scale,
+      h: cropHeight / grid.scale,
+      dataUrl: canvas.toDataURL("image/png")
+    }
   }
 
   // Draw tray's tool/color/size buttons live in editor_controller.js (they
@@ -1147,6 +1360,17 @@ export default class extends Controller {
         if (!originalPhoto) return originalPhoto
         const { scaleX, scaleY } = cornerScaleFactors(originalPts, corner, current.x, current.y)
         return { ...originalPhoto, x: originalPhoto.x * scaleX, y: originalPhoto.y * scaleY }
+      },
+      // Each fill is a plain axis-aligned rectangle (see startBucketFill)
+      // — its own top-left corner scales as a point from the same anchor
+      // as everything else here, and its width/height scale by the same
+      // (always-positive, see cornerScaleFactors) per-axis factors.
+      (originalFills, current, originalPts) => {
+        const { anchorX, anchorY, scaleX, scaleY } = cornerScaleFactors(originalPts, corner, current.x, current.y)
+        return originalFills.map((fill) => {
+          const [ [ x, y ] ] = scalePointsFromAnchor([ [ fill.x, fill.y ] ], anchorX, anchorY, scaleX, scaleY)
+          return { ...fill, x, y, w: fill.w * scaleX, h: fill.h * scaleY }
+        })
       }
     )
   }
@@ -1169,7 +1393,15 @@ export default class extends Controller {
   // for both a plain move (its pan offset is relative to the box center,
   // so it's already translation-invariant) and vertex/shape editing (which
   // only reshapes the panel's own border, same reasoning as strokes above).
-  beginDrag(panelId, computeNewPts, computeNewStrokes = (strokes) => strokes, computeNewPhoto = (photo) => photo) {
+  // `computeNewFills` defaults the same way, for the same reason (see
+  // startBucketFill) — paint-bucket fills.
+  beginDrag(
+    panelId,
+    computeNewPts,
+    computeNewStrokes = (strokes) => strokes,
+    computeNewPhoto = (photo) => photo,
+    computeNewFills = (fills) => fills
+  ) {
     const store = this.documentStoreController.store
     const panel = store.getState().panels.find((p) => p.id === panelId)
     if (!panel) return
@@ -1177,16 +1409,19 @@ export default class extends Controller {
     const originalPts = panel.pts.map(([ x, y ]) => [ x, y ])
     const originalStrokes = panel.strokes.map((stroke) => ({ ...stroke, pts: stroke.pts.map(([ x, y ]) => [ x, y ]) }))
     const originalPhoto = panel.photo ? { ...panel.photo } : null
+    const originalFills = (panel.fills || []).map((fill) => ({ ...fill }))
     let lastPts = null
     let lastStrokes = null
     let lastPhoto = originalPhoto
+    let lastFills = null
 
     const onMove = (moveEvent) => {
       const current = this.svgPoint(moveEvent)
       lastPts = computeNewPts(originalPts, current)
       lastStrokes = computeNewStrokes(originalStrokes, current, originalPts)
       lastPhoto = computeNewPhoto(originalPhoto, current, originalPts)
-      this.updatePanelDom(panelId, lastPts, lastStrokes, lastPhoto)
+      lastFills = computeNewFills(originalFills, current, originalPts)
+      this.updatePanelDom(panelId, lastPts, lastStrokes, lastPhoto, lastFills)
     }
 
     const onUp = () => {
@@ -1200,6 +1435,7 @@ export default class extends Controller {
           target.pts = lastPts
           if (lastStrokes) target.strokes = lastStrokes
           if (target.photo) target.photo = lastPhoto
+          if (lastFills) target.fills = lastFills
         })
       }
     }
@@ -1210,7 +1446,7 @@ export default class extends Controller {
 
   // Updates the live DOM during a drag without a full clear/rebuild, so
   // the dragged element itself is never torn down mid-gesture.
-  updatePanelDom(panelId, pts, strokes = null, photo = undefined) {
+  updatePanelDom(panelId, pts, strokes = null, photo = undefined, fills = null) {
     const pointsAttr = pointsToAttr(pts)
 
     const polygon = this.canvasTarget.querySelector(`polygon.panel-outline[data-panel-id="${panelId}"]`)
@@ -1225,6 +1461,8 @@ export default class extends Controller {
     if (photo !== undefined) this.renderPhotoGroup(panelId, { pts, photo })
 
     if (strokes) this.updateInkDom(panelId, strokes)
+
+    if (fills) this.renderFillsGroup(panelId, fills)
 
     if (this.selectedPanelId === panelId) {
       if (this.shapeMode) {

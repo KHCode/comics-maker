@@ -85,6 +85,18 @@ export function newPanel(kind, x, y, width, height, id = generateId()) {
     id,
     pts: generatePanelPoints(kind, x, y, width, height),
     strokes: [],
-    photo: null
+    photo: null,
+    // Draw mode's paint bucket (see panel_controller.js#startBucketFill):
+    // `bg` is the panel's own background color (null = the default white),
+    // set by a bucket click that lands in open space; `fills` are small
+    // rasterized regions bucket-filled *within* a closed loop of ink,
+    // `{id, x, y, w, h, dataUrl}` — a positioned PNG rather than a vector
+    // shape, the same kind of embedded-raster-in-an-otherwise-vector-page
+    // precedent panel.photo already set, since tracing an arbitrary
+    // flood-filled pixel region into a clean vector outline is a much
+    // larger, riskier undertaking than painting the very mask the flood
+    // fill already computed.
+    bg: null,
+    fills: []
   }
 }

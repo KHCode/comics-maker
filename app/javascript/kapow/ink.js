@@ -31,6 +31,20 @@ export const INK_COLORS = [
   "#8b5cf6"
 ]
 
+// "#rrggbb" -> [r, g, b] (0-255 each) — used by the paint bucket to paint
+// a flood-filled region's raster image in the current ink color (see
+// panel_controller.js#rasterizeBucketFillImage). Every color this app
+// ever hands here (the INK_COLORS/SFX_COLORS swatches) is already this
+// exact 7-character form, so no "#fff"/"rgb(...)"/named-color handling is
+// needed.
+export function hexToRgb(hex) {
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16)
+  ]
+}
+
 const DEFAULT_PRESSURE = 0.5
 
 // PointerEvent.pressure reports a flat 0.5 for hardware that doesn't report

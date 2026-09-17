@@ -8,11 +8,27 @@ import {
   INK_COLORS,
   pressureOrDefault,
   strokeWidth,
-  eraseStrokes
+  eraseStrokes,
+  hexToRgb
 } from "../../app/javascript/kapow/ink.js"
 
 test("INK_COLORS exposes exactly 7 swatches", () => {
   assert.equal(INK_COLORS.length, 7)
+})
+
+test("hexToRgb parses a #rrggbb string into its 0-255 components", () => {
+  assert.deepEqual(hexToRgb("#1c1a17"), [ 0x1c, 0x1a, 0x17 ])
+  assert.deepEqual(hexToRgb("#ffffff"), [ 255, 255, 255 ])
+  assert.deepEqual(hexToRgb("#000000"), [ 0, 0, 0 ])
+})
+
+test("hexToRgb round-trips every INK_COLORS swatch to valid byte values", () => {
+  for (const hex of INK_COLORS) {
+    const [ r, g, b ] = hexToRgb(hex)
+    for (const channel of [ r, g, b ]) {
+      assert.ok(Number.isInteger(channel) && channel >= 0 && channel <= 255)
+    }
+  }
 })
 
 test("pressureOrDefault passes through a real pressure reading", () => {

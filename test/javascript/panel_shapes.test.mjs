@@ -50,13 +50,15 @@ test("generatePanelPoints rejects an unknown shape", () => {
   assert.throws(() => generatePanelPoints("hexagon", 0, 0, 10, 10), /Unknown panel shape/)
 })
 
-test("newPanel builds a full panel object with an id, empty strokes, no photo", () => {
+test("newPanel builds a full panel object with an id, empty strokes, no photo, no background/fills", () => {
   const panel = newPanel("box", 0, 0, 100, 100, "fixed-id")
 
   assert.equal(panel.id, "fixed-id")
   assert.deepEqual(panel.pts, boxPoints(0, 0, 100, 100))
   assert.deepEqual(panel.strokes, [])
   assert.equal(panel.photo, null)
+  assert.equal(panel.bg, null)
+  assert.deepEqual(panel.fills, [])
 })
 
 test("newPanel generates a unique id when none is given", () => {
