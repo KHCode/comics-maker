@@ -539,6 +539,42 @@ class TextTest < ApplicationSystemTestCase
     assert after[1] > before[1]
   end
 
+  # Regression: the tail's base used to be hardcoded to leave the ellipse
+  # from its bottom regardless of where the tail tip actually was, so
+  # dragging the tip above the bubble drew two long lines crossing
+  # straight up through the bubble's own interior/text instead of a clean
+  # notch. Now the base tracks the tail's own direction.
+  test "dragging a speech bubble's tail above the bubble makes it leave from the top, not cross through the middle (regression)" do
+    user = User.create!(name: "Letterer", email: "letter27@kapow.test", password: "password123")
+    project = create_blank_project(user)
+
+    sign_in(user)
+    visit project_path(project)
+    switch_to_letter_mode
+    add_text("Speech")
+    text_box("speech").click
+
+    assert_selector ".text-tail-handle"
+    drag_element_by(find(".text-tail-handle"), 0, -250)
+
+    text = stored_texts.first
+    box_top = text["y"]
+    box_bottom = text["y"] + text["h"]
+    box_mid_y = (box_top + box_bottom) / 2.0
+    assert text["tail"][1] < box_top, "expected the tail tip to end up above the bubble"
+
+    path_d = find(".text-shape--speech path", visible: :all).native.attribute("d")
+    match = path_d.match(/\AM ([\d.-]+) ([\d.-]+) L ([\d.-]+) ([\d.-]+) L ([\d.-]+) ([\d.-]+) A/)
+    refute_nil match, "expected the seamless bubble+tail path to start M x y L x y L x y A ..."
+    _mx, my, _tx, _ty, _lx, ly = match.captures.map(&:to_f)
+
+    # Both flank points -- where the notch actually leaves the ellipse --
+    # must now sit above the box's own vertical midpoint (i.e. near the
+    # top), not near the bottom where the old hardcoded base put them.
+    assert my < box_mid_y, "expected left flank y (#{my}) above the box midpoint (#{box_mid_y})"
+    assert ly < box_mid_y, "expected right flank y (#{ly}) above the box midpoint (#{box_mid_y})"
+  end
+
   test "a speech bubble renders as one seamless shape, not a separately bordered bubble and tail" do
     user = User.create!(name: "Letterer", email: "letter15@kapow.test", password: "password123")
     project = create_blank_project(user)
