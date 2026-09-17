@@ -56,7 +56,14 @@ class CanvasZoomGesturesTest < ApplicationSystemTestCase
     JS
   end
 
-  test "ctrl+wheel zooms the canvas in and out" do
+  # A physical mouse wheel typically reports one large deltaY (e.g. ±100)
+  # per single click, while a trackpad's ctrl+scroll reports many small
+  # ones in quick succession — scaling the zoom step by that magnitude
+  # made one literal mouse-wheel click jump by a huge, device-dependent
+  # amount instead of a small, predictable one (reported after actually
+  # trying it). Each wheel event now moves by a fixed 1%, regardless of
+  # its own deltaY size — only the *sign* matters.
+  test "each ctrl+wheel event zooms by a fixed 1%, regardless of that event's own delta magnitude" do
     user = User.create!(name: "Zoomer", email: "gesture1@kapow.test", password: "password123")
     project = user.projects.create!(name: "Comic", format: :comic)
     project.pages.create!(position: 1, name: "Page 1", data: { "schema_version" => 1, "panels" => [], "texts" => [] })
@@ -66,11 +73,14 @@ class CanvasZoomGesturesTest < ApplicationSystemTestCase
 
     assert_equal "100%", zoom_level_text
 
-    dispatch_ctrl_wheel(-100) # negative deltaY == pinch out / zoom in, matching trackpad convention
-    assert_equal "200%", zoom_level_text
+    dispatch_ctrl_wheel(-1) # negative deltaY == pinch out / zoom in, matching trackpad convention
+    assert_equal "101%", zoom_level_text
 
-    dispatch_ctrl_wheel(50)
-    assert_equal "150%", zoom_level_text
+    dispatch_ctrl_wheel(-500) # a much larger magnitude still only moves by the same fixed 1% step
+    assert_equal "102%", zoom_level_text
+
+    dispatch_ctrl_wheel(3) # positive deltaY == zoom out
+    assert_equal "101%", zoom_level_text
   end
 
   test "a plain wheel scroll (no ctrl) is left alone and does not zoom" do

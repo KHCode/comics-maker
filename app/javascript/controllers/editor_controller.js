@@ -24,12 +24,17 @@ const THUMBNAIL_QUALITY = 0.8
 const ZOOM_MIN = 0.5
 const ZOOM_MAX = 2.5
 const ZOOM_STEP = 0.25
-// A rough, untuned starting point — trackpad wheel deltaY magnitudes vary
-// a lot by device/OS/browser and can't be verified against real hardware
-// in this sandbox (the same caveat the plan's own open questions note for
-// stylus pressure). Picked so an ordinary two-finger trackpad pinch swings
-// across roughly the whole zoom range, not a single click's worth.
-const WHEEL_ZOOM_SENSITIVITY = 0.01
+// A fixed step per wheel *event*, not scaled by that event's own deltaY —
+// deltaY magnitude varies enormously by input device (a literal mouse
+// wheel typically reports one large value like ±100 per physical click,
+// while a trackpad's ctrl+scroll/pinch reports many small values per
+// second), so scaling by it made one mouse-wheel click jump by a huge,
+// inconsistent amount instead of a small, predictable one. Every wheel
+// event now moves by exactly this much regardless of its own deltaY size
+// — one physical mouse-wheel click is one event, so this is that click's
+// zoom step; a trackpad gesture fires many events in quick succession, so
+// it still zooms smoothly, just as a rapid sequence of small steps.
+const WHEEL_ZOOM_STEP = 0.01
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
@@ -532,7 +537,7 @@ export default class extends Controller {
   handleWheelZoom(event) {
     if (!event.ctrlKey) return
     event.preventDefault()
-    this.setZoom(this.zoomValue - event.deltaY * WHEEL_ZOOM_SENSITIVITY)
+    this.setZoom(this.zoomValue - Math.sign(event.deltaY) * WHEEL_ZOOM_STEP)
   }
 
   // Two-finger touchscreen pinch. Deliberately keyed off touch *count*
