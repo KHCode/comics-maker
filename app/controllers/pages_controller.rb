@@ -65,10 +65,12 @@ class PagesController < ApplicationController
       return redirect_to project_path(@project), alert: "A comic needs at least one page."
     end
 
+    renumbered_pages = []
     ActiveRecord::Base.transaction do
       deleted_position = @page.position
       @page.destroy!
-      @project.pages.where("position > ?", deleted_position).order(:position).each do |page|
+      renumbered_pages = @project.pages.where("position > ?", deleted_position).order(:position).to_a
+      renumbered_pages.each do |page|
         new_position = page.position - 1
         # Only renumber the label if it still matches the auto-generated
         # default — once pages can be renamed (a later PR), a custom name
@@ -78,7 +80,31 @@ class PagesController < ApplicationController
       end
     end
 
-    redirect_to project_path(@project), notice: "#{@page.name} deleted.", status: :see_other
+    respond_to do |format|
+      # Same reasoning as #create's turbo_stream branch: a plain redirect
+      # would reload the whole editor for no reason a page *removal*
+      # should either.
+      format.turbo_stream do
+        remaining_count = @project.pages.count
+        streams = [ turbo_stream.remove(helpers.dom_id(@page)) ]
+        # Every page after the deleted one shifted position (and maybe
+        # name) above — those need re-rendering so their label reflects
+        # the new numbering immediately rather than after some future
+        # reload.
+        pages_to_refresh = renumbered_pages
+        # Down to one page left: that lone page's own "Delete page"
+        # button needs to disappear too (see the partial), even when its
+        # own position never changed — e.g. deleting page 2 of 2 leaves
+        # page 1 untouched by the renumbering above, but it still isn't
+        # deletable any more.
+        pages_to_refresh = @project.pages.to_a if remaining_count == 1 && pages_to_refresh.empty?
+        pages_to_refresh.each do |page|
+          streams << turbo_stream.replace(helpers.dom_id(page), partial: "projects/page", locals: { page: page, project: @project, page_count: remaining_count })
+        end
+        render turbo_stream: streams
+      end
+      format.html { redirect_to project_path(@project), notice: "#{@page.name} deleted.", status: :see_other }
+    end
   end
 
   def grow

@@ -365,6 +365,21 @@ export default class extends Controller {
     this.markActivePage(pageEl)
   }
 
+  // Mirrors pageTargetConnected above, for a page removed without a full
+  // reload (see PagesController#destroy's turbo_stream branch). Without
+  // this, deleting whichever page happened to be active/last-mutated
+  // would leave activePageElement/lastMutatedPageElement pointing at a
+  // now-detached element — targetPageElement would keep "targeting" a
+  // page that's no longer in the document instead of falling back to a
+  // real one, and documentStoreControllerFor(pageEl) would return
+  // nothing for it (Stimulus tears down a disconnected element's own
+  // controllers), so the very next "Add panel"/undo/redo would silently
+  // do nothing.
+  pageTargetDisconnected(pageEl) {
+    if (this.activePageElement === pageEl) this.activePageElement = null
+    if (this.lastMutatedPageElement === pageEl) this.lastMutatedPageElement = null
+  }
+
   addPanel(event) {
     const pageEl = this.targetPageElement
     if (!pageEl) return
