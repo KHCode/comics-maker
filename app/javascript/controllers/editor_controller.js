@@ -351,6 +351,20 @@ export default class extends Controller {
     this.pageTargets.forEach((el) => el.classList.toggle("page--active", el === pageEl))
   }
 
+  // Fires for every page element as it connects — both the ones already
+  // in the DOM at startup (redundant with, but harmless alongside,
+  // connect()'s own markActivePage(newestPageElement) call above) and,
+  // more importantly, one appended later without a full page reload (see
+  // PagesController#create's turbo_stream branch): "+Page" used to
+  // always land on a fresh reload, where connect() naturally re-picked
+  // the newest page as active; now that adding a page no longer reloads
+  // anything, this is what makes the newly added page become the active
+  // one (so the next "Add panel"/preset click lands on it) instead of
+  // silently leaving whichever page was active before untouched.
+  pageTargetConnected(pageEl) {
+    this.markActivePage(pageEl)
+  }
+
   addPanel(event) {
     const pageEl = this.targetPageElement
     if (!pageEl) return

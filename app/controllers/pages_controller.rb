@@ -7,9 +7,35 @@ class PagesController < ApplicationController
       return redirect_to project_path(@project), alert: "Webtoon comics use one continuous page."
     end
 
-    next_position = @project.pages.maximum(:position).to_i + 1
+    pages_before = @project.pages.to_a
+    next_position = pages_before.map(&:position).max.to_i + 1
     page = @project.pages.create!(position: next_position, name: "Page #{next_position}")
-    redirect_to project_path(@project), notice: "#{page.name} added."
+
+    respond_to do |format|
+      # A plain redirect (like every other action here) would reload the
+      # whole editor — wiping every unsaved, session-only view setting
+      # (zoom, Columns, Hide text, undo history…) for no reason a mere
+      # page *addition* should. Appending just the new page's own markup
+      # leaves the rest of the DOM (and every other page's already-
+      # connected document-store/panel/text controllers) untouched.
+      format.turbo_stream do
+        streams = []
+        # The first page's "Delete page" button stays hidden while it's
+        # the only page (see the partial) — once this add makes it no
+        # longer the only page, that page needs re-rendering too so its
+        # button appears without waiting for a future full reload. This
+        # has to run *before* the append below: editor_controller.js's
+        # pageTargetConnected marks whichever page connects last as the
+        # active one, and the just-added page (not page 1) needs to win
+        # that race.
+        if pages_before.one?
+          streams << turbo_stream.replace(helpers.dom_id(pages_before.first), partial: "projects/page", locals: { page: pages_before.first, project: @project, page_count: @project.pages.count })
+        end
+        streams << turbo_stream.append("pages", partial: "projects/page", locals: { page: page, project: @project, page_count: @project.pages.count })
+        render turbo_stream: streams
+      end
+      format.html { redirect_to project_path(@project), notice: "#{page.name} added." }
+    end
   end
 
   # The single write path for a page's editing content (panels/texts) —

@@ -1,0 +1,17 @@
+<div class="page"
+     id="<%= dom_id(page) %>"
+     data-controller="document-store panel text"
+     data-editor-target="page"
+     data-action="document-store:change->panel#refresh document-store:change->text#refresh click->editor#selectPage panel:selected->editor#selectPage panel:focused->editor#updateFocusIndicator panel:unfocused->editor#updateFocusIndicator panel:focused->editor#syncPhotoControls panel:unfocused->editor#syncPhotoControls document-store:change->editor#syncPhotoControls panel:focused->text#hide panel:unfocused->text#show text:selectionChanged->editor#syncTextLayerButton document-store:change->editor#syncTextLayerButton document-store:change->editor#handleDocumentChange"
+     data-document-store-project-id-value="<%= project.id %>"
+     data-document-store-page-id-value="<%= page.id %>"
+     data-document-store-initial-data-value="<%= page.data.to_json %>">
+  <div class="page-toolbar">
+    <span class="page-label"><%= page.name %></span>
+    <% if project.paginated? && page_count > 1 %>
+      <%= button_to "Delete page", project_page_path(project, page), method: :delete, class: "btn--subtle", form: { class: "inline-form" } %>
+    <% end %>
+  </div>
+  <svg class="page-canvas" data-panel-target="canvas" data-text-target="canvas" data-action="pointerdown->panel#deselectOnBackgroundPointerDown" viewBox="0 0 <%= project.page_width %> <%= page.height %>" role="img" aria-label="<%= page.name %>"></svg>
+  <div class="page-text-layer" data-text-target="layer"></div>
+</div>
