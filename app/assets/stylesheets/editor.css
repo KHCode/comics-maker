@@ -17,6 +17,10 @@
      .page-canvas's width outright, see below) is completely unaffected by
      whatever the canvas zoom level is. */
   --canvas-zoom: 1;
+  /* Pages side by side (see editor_controller.js#applyColumns) — how many
+     page columns .pages lays out per row; consumed by .pages's grid
+     below. */
+  --pages-columns: 1;
 }
 
 .editor-header {
@@ -42,6 +46,11 @@
   flex: 1;
   min-height: 0; /* let this child shrink and scroll internally, instead of growing past .editor's fixed height */
   overflow-y: auto;
+  /* No overflow-x set: per the CSS overflow spec, setting only one axis
+     to a non-visible value computes the other axis's initial `visible`
+     as `auto` too — so a too-wide zoomed multi-column row (see .pages)
+     already scrolls horizontally for free, the same way a too-tall
+     zoomed page already scrolls vertically. */
 }
 
 .editor-canvas--locked {
@@ -53,9 +62,33 @@
 }
 
 .pages {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  /* A grid rather than flex-wrap: with --pages-columns fixed-length
+     tracks (see below), wrapping into a new row after N pages is the
+     grid's own default auto-placement — no JS layout math needed, and
+     unlike flex-wrap this still reserves N columns' worth of row width
+     even when there are fewer pages than columns (e.g. a single-page
+     webtoon project with Columns set to 3), so the lone page renders at
+     its normal size in the first column instead of stretching to fill. */
+  display: grid;
+  /* Each column's cap is a single page's own vw-based mobile safety net
+     (matching the pre-columns behavior exactly when --pages-columns is
+     1), not divided by column count — dividing it would leave zoom
+     unable to grow pages past a couple hundred percent as soon as more
+     than one column is showing, even on an ordinary desktop-width
+     screen. A wider row than the viewport just scrolls horizontally
+     instead (.editor-canvas already computes overflow-x: auto — see its
+     own overflow-y comment below — the same way an over-tall zoomed
+     single column already scrolls vertically). */
+  grid-template-columns: repeat(var(--pages-columns), min(100vw, calc(400px * var(--canvas-zoom))));
+  /* `safe` matters once zoom/columns combine to overflow the viewport:
+     plain `center` is "unsafe" by default, splitting the overflow evenly
+     onto *both* sides — including a negative, off-the-left-edge portion
+     that's outside .editor-canvas's scrollable region and unreachable no
+     matter how far it's scrolled. `safe center` falls back to start
+     alignment in exactly that case, so every column stays reachable by
+     scrolling right from the origin instead. */
+  justify-content: safe center;
+  align-content: start;
   /* Approximates the doc's 44-page-unit gutter between pages; not an exact
      unit-to-pixel conversion since page width scales with viewport. */
   gap: 2rem;
@@ -70,19 +103,13 @@
   border-radius: var(--radius);
   outline: 3px solid transparent;
   outline-offset: 6px;
-  /* The zoom-driven width lives here, not on .page-canvas/.page-toolbar
-     themselves (see --canvas-zoom on .editor) — .pages is a flex
-     container with align-items: center, which sizes an item with no
-     explicit width of its own via shrink-to-fit; a percentage width on
-     *this* element's children can't be resolved without first knowing
-     .page's own size, so the browser has to ignore it for that shrink-
-     to-fit calculation, locking .page (and everything using % inside it)
-     to the SVG's small intrinsic replaced-element size regardless of
-     --canvas-zoom — confirmed by inspecting actual rendered widths, not
-     assumed. Giving .page itself an explicit width here instead sidesteps
-     the shrink-to-fit calculation entirely, so its children's own 100%
-     widths below resolve against a real, already-known number. */
-  width: min(100%, calc(400px * var(--canvas-zoom)));
+  /* .pages's own grid track width (see above) is already the zoom- and
+     column-count-driven size, and grid items stretch to fill their track
+     by default — so plain 100% here (unlike the flex layout this
+     replaced) resolves against that real, already-known column width
+     rather than an intrinsic shrink-to-fit calculation, and everything
+     using % inside .page-canvas/.page-toolbar below keeps working. */
+  width: 100%;
 }
 
 .page--active {

@@ -70,6 +70,7 @@ export default class extends Controller {
     "photoSubTab", "photoSubPanel",
     "photoBright", "photoContrast", "photoHue", "photoSat", "photoLook",
     "hideTextsButton", "textLayerButton",
+    "columnsButton",
     "undoButton", "redoButton",
     "exportButton", "exportPdfButton",
     "zoomInButton", "zoomOutButton", "zoomLevel"
@@ -83,7 +84,8 @@ export default class extends Controller {
     drawSize: { type: String, default: "m" },
     drawLayer: { type: String, default: "ink" },
     photoSubTab: { type: String, default: "fit" },
-    zoom: { type: Number, default: 1 }
+    zoom: { type: Number, default: 1 },
+    columns: { type: Number, default: 1 }
   }
 
   connect() {
@@ -105,6 +107,8 @@ export default class extends Controller {
     this.syncTextLayerButton()
     this.syncUndoRedoButtons()
     this.applyZoom()
+    this.updateColumnsUI()
+    this.applyColumns()
 
     // Trackpad/mouse ctrl+scroll and touchscreen pinch (see
     // handleWheelZoom/handleTouchStart/handleTouchMove) — both are on top
@@ -524,6 +528,28 @@ export default class extends Controller {
     if (this.hasZoomLevelTarget) this.zoomLevelTarget.textContent = `${Math.round(this.zoomValue * 100)}%`
     if (this.hasZoomInButtonTarget) this.zoomInButtonTarget.disabled = this.zoomValue >= ZOOM_MAX
     if (this.hasZoomOutButtonTarget) this.zoomOutButtonTarget.disabled = this.zoomValue <= ZOOM_MIN
+  }
+
+  // Layout tray's "Columns" control — how many pages sit side by side per
+  // row (1/2/3), independent of canvas zoom. Session-only like zoom/"Hide
+  // text", not persisted; always starts back at 1 on the next visit.
+  // Applied the same way as zoom: a single CSS custom property on this
+  // element (see --pages-columns in editor.css) rather than any JS layout
+  // math, so .pages's own grid handles wrapping pages into rows.
+  selectColumns(event) {
+    this.columnsValue = Number(event.currentTarget.dataset.columns)
+    this.updateColumnsUI()
+    this.applyColumns()
+  }
+
+  updateColumnsUI() {
+    this.columnsButtonTargets.forEach((button) => {
+      button.classList.toggle("ink-size--active", Number(button.dataset.columns) === this.columnsValue)
+    })
+  }
+
+  applyColumns() {
+    this.element.style.setProperty("--pages-columns", this.columnsValue)
   }
 
   // Trackpad pinch gestures and literal ctrl+scroll-wheel both arrive as

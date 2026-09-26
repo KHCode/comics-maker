@@ -88,6 +88,10 @@
       <div class="tray-section">
         <span class="tray-label">View</span>
         <button type="button" class="ink-tool" data-editor-target="hideTextsButton" data-action="click->editor#toggleTextsVisibility">Hide text</button>
+        <span class="tray-hint">Columns</span>
+        <button type="button" class="ink-size" data-editor-target="columnsButton" data-columns="1" data-action="click->editor#selectColumns" aria-label="Show 1 page per row">1</button>
+        <button type="button" class="ink-size" data-editor-target="columnsButton" data-columns="2" data-action="click->editor#selectColumns" aria-label="Show 2 pages per row">2</button>
+        <button type="button" class="ink-size" data-editor-target="columnsButton" data-columns="3" data-action="click->editor#selectColumns" aria-label="Show 3 pages per row">3</button>
       </div>
     </div>
     <div class="contextual-tray" data-editor-target="tray" data-mode="draw" hidden>
