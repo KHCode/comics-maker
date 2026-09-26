@@ -9,7 +9,7 @@
   <div class="page-toolbar">
     <span class="page-label"><%= page.name %></span>
     <% if project.paginated? && page_count > 1 %>
-      <%= button_to "Delete page", project_page_path(project, page), method: :delete, class: "btn--subtle", form: { class: "inline-form" } %>
+      <%= button_to "Delete page", project_page_path(project, page), method: :delete, class: "btn--subtle", data: { action: "click->editor#markPageDeleting" }, form: { class: "inline-form" } %>
     <% end %>
   </div>
   <svg class="page-canvas" data-panel-target="canvas" data-text-target="canvas" data-action="pointerdown->panel#deselectOnBackgroundPointerDown" viewBox="0 0 <%= project.page_width %> <%= page.height %>" role="img" aria-label="<%= page.name %>"></svg>

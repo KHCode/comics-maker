@@ -380,6 +380,20 @@ export default class extends Controller {
     if (this.lastMutatedPageElement === pageEl) this.lastMutatedPageElement = null
   }
 
+  // "Delete page" button's click handler, alongside its own (unchanged)
+  // form submission — see DocumentStore#disable in kapow/document_store.js.
+  // This page's own record is about to be destroyed by this same click's
+  // request, so its store has no reason to ever try saving again: not
+  // its regular debounce timer (which fires on its own schedule,
+  // independent of this element even still being in the DOM), and not
+  // document_store_controller.js#disconnect's flush() once
+  // PagesController#destroy's turbo_stream.remove takes this element out
+  // — either would just 404 otherwise.
+  markPageDeleting(event) {
+    const pageEl = event.currentTarget.closest(".page")
+    this.documentStoreControllerFor(pageEl)?.store.disable()
+  }
+
   addPanel(event) {
     const pageEl = this.targetPageElement
     if (!pageEl) return
