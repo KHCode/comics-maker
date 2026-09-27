@@ -28,7 +28,11 @@ export default class extends Controller {
 
   disconnect() {
     // Save any pending debounced changes rather than losing them if this
-    // page's element leaves the DOM (e.g. a Turbo navigation).
+    // page's element leaves the DOM (e.g. a Turbo navigation). A no-op if
+    // this page was the one just deleted (see store.disable(), called
+    // from editor_controller.js#markPageDeleting) — its record is
+    // already gone server-side by the time this fires, so persisting
+    // here would only 404.
     this.store.flush()
   }
 

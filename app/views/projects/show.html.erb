@@ -42,25 +42,8 @@
       </p>
     <% end %>
 
-    <div class="pages">
-      <% @pages.each do |page| %>
-        <div class="page"
-             data-controller="document-store panel text"
-             data-editor-target="page"
-             data-action="document-store:change->panel#refresh document-store:change->text#refresh click->editor#selectPage panel:selected->editor#selectPage panel:focused->editor#updateFocusIndicator panel:unfocused->editor#updateFocusIndicator panel:focused->editor#syncPhotoControls panel:unfocused->editor#syncPhotoControls document-store:change->editor#syncPhotoControls panel:focused->text#hide panel:unfocused->text#show text:selectionChanged->editor#syncTextLayerButton document-store:change->editor#syncTextLayerButton document-store:change->editor#handleDocumentChange"
-             data-document-store-project-id-value="<%= @project.id %>"
-             data-document-store-page-id-value="<%= page.id %>"
-             data-document-store-initial-data-value="<%= page.data.to_json %>">
-          <div class="page-toolbar">
-            <span class="page-label"><%= page.name %></span>
-            <% if @project.paginated? && @pages.size > 1 %>
-              <%= button_to "Delete page", project_page_path(@project, page), method: :delete, class: "btn--subtle", form: { class: "inline-form" } %>
-            <% end %>
-          </div>
-          <svg class="page-canvas" data-panel-target="canvas" data-text-target="canvas" data-action="pointerdown->panel#deselectOnBackgroundPointerDown" viewBox="0 0 <%= @project.page_width %> <%= page.height %>" role="img" aria-label="<%= page.name %>"></svg>
-          <div class="page-text-layer" data-text-target="layer"></div>
-        </div>
-      <% end %>
+    <div class="pages" id="pages">
+      <%= render partial: "page", collection: @pages, as: :page, locals: { project: @project, page_count: @pages.size } %>
     </div>
   </main>
 
@@ -88,6 +71,10 @@
       <div class="tray-section">
         <span class="tray-label">View</span>
         <button type="button" class="ink-tool" data-editor-target="hideTextsButton" data-action="click->editor#toggleTextsVisibility">Hide text</button>
+        <span class="tray-hint">Columns</span>
+        <button type="button" class="ink-size" data-editor-target="columnsButton" data-columns="1" data-action="click->editor#selectColumns" aria-label="Show 1 page per row">1</button>
+        <button type="button" class="ink-size" data-editor-target="columnsButton" data-columns="2" data-action="click->editor#selectColumns" aria-label="Show 2 pages per row">2</button>
+        <button type="button" class="ink-size" data-editor-target="columnsButton" data-columns="3" data-action="click->editor#selectColumns" aria-label="Show 3 pages per row">3</button>
       </div>
     </div>
     <div class="contextual-tray" data-editor-target="tray" data-mode="draw" hidden>

@@ -58,9 +58,11 @@ export const FONT_CHOICES = [ "comic", "loud", "print", "serif" ]
 // have no seam where the tail meets the body — a separately drawn ellipse
 // and triangle, each with their own stroke, can't achieve that). The
 // tail's two flanks leave the ellipse boundary at a small angular offset
-// either side of "straight down" (the box's own bottom-*edge* only
-// touches the ellipse at the single bottommost point, not across a
-// range), then meet at the tail tip.
+// either side of wherever the tail tip actually is (see
+// ellipseAngleToward below) — not hardcoded to "straight down", since a
+// tail dragged above or beside the bubble still needs to leave from the
+// nearest side rather than drawing straight through the bubble's own
+// middle to reach a base point stuck at the bottom.
 const TAIL_BASE_HALF_ANGLE_DEG = 16
 
 function ellipsePoint(cx, cy, rx, ry, deg) {
@@ -68,13 +70,39 @@ function ellipsePoint(cx, cy, rx, ry, deg) {
   return [ cx + rx * Math.cos(rad), cy + ry * Math.sin(rad) ]
 }
 
-// The bottom-center point of the bubble's own bounding box — a rough
-// anchor for the tail's "shaft" handle (see tailShaftMidpoint), not
-// exactly where the tail's flanks leave the ellipse (see
-// TAIL_BASE_HALF_ANGLE_DEG above) since that precision doesn't matter for
-// a handle position.
+// The ellipse-boundary parametric angle, in radians and in ellipsePoint's
+// own convention (0 = right, a quarter turn = bottom, since y grows
+// downward), of the point where a ray from the ellipse's center toward
+// (tx, ty) would cross the boundary. Scaling by rx/ry (rather than a
+// plain atan2(dy, dx)) means a point that's visually "straight up" from a
+// wide, short bubble still resolves to (approximately) the ellipse's own
+// top, not skewed toward whichever axis happens to be longer. Shared by
+// speechBubblePath, tailBaseCenter, and shoutStarPoints below to make
+// each direction-aware instead of hardcoded to "the bottom".
+function ellipseAngleToward(cx, cy, rx, ry, tx, ty) {
+  const dx = tx - cx
+  const dy = ty - cy
+  if (dx === 0 && dy === 0) return Math.PI / 2 // degenerate: tail exactly at center
+  return Math.atan2(dy / ry, dx / rx)
+}
+
+// The point on the bubble's own ellipse boundary nearest the tail's
+// direction — a rough anchor for the tail's "shaft" handle (see
+// tailShaftMidpoint) and for Think's trailing circles (see
+// thinkTrailCircles), not exactly where Speech's flanks leave the ellipse
+// (see TAIL_BASE_HALF_ANGLE_DEG above) since that precision doesn't
+// matter for a handle position or a trail's own starting point. Falls
+// back to the box's own bottom-center when there's no tail yet.
 export function tailBaseCenter(text) {
-  return [ text.x + text.w / 2, text.y + text.h ]
+  const cx = text.x + text.w / 2
+  const cy = text.y + text.h / 2
+  const rx = text.w / 2
+  const ry = text.h / 2
+  if (!text.tail) return [ cx, cy + ry ]
+
+  const [ tx, ty ] = text.tail
+  const baseAngleDeg = (ellipseAngleToward(cx, cy, rx, ry, tx, ty) * 180) / Math.PI
+  return ellipsePoint(cx, cy, rx, ry, baseAngleDeg)
 }
 
 // The "move both together" handle (see text_controller.js#startBothDrag)
@@ -109,10 +137,11 @@ export function speechBubblePath(text) {
   const cy = text.y + text.h / 2
   const rx = text.w / 2
   const ry = text.h / 2
-
-  const [ leftX, leftY ] = ellipsePoint(cx, cy, rx, ry, 90 + TAIL_BASE_HALF_ANGLE_DEG)
-  const [ rightX, rightY ] = ellipsePoint(cx, cy, rx, ry, 90 - TAIL_BASE_HALF_ANGLE_DEG)
   const [ tx, ty ] = text.tail
+
+  const baseAngle = (ellipseAngleToward(cx, cy, rx, ry, tx, ty) * 180) / Math.PI
+  const [ leftX, leftY ] = ellipsePoint(cx, cy, rx, ry, baseAngle + TAIL_BASE_HALF_ANGLE_DEG)
+  const [ rightX, rightY ] = ellipsePoint(cx, cy, rx, ry, baseAngle - TAIL_BASE_HALF_ANGLE_DEG)
 
   return [
     `M ${leftX} ${leftY}`,
@@ -120,9 +149,12 @@ export function speechBubblePath(text) {
     `L ${rightX} ${rightY}`,
     // sweep-flag=0 (not 1) is what actually resolves to *this* ellipse
     // (centered on the bubble's own box) for the long way around — the
-    // other flag combos either draw the short bottom sliver or a wildly
-    // different, wrong ellipse through the same two points; verified
-    // empirically against getBBox(), not derived by hand.
+    // other flag combos either draw the short sliver behind the notch or
+    // a wildly different, wrong ellipse through the same two points;
+    // verified against the SVG spec's own endpoint-to-center arc formula
+    // for asymmetric rx/ry at baseAngle values all the way around the
+    // ellipse, not just the bottom — the flag choice doesn't depend on
+    // where around the ellipse the notch actually sits.
     `A ${rx} ${ry} 0 1 0 ${leftX} ${leftY}`,
     "Z"
   ].join(" ")
@@ -158,13 +190,27 @@ export function tailedShapeBounds(text) {
 const SHOUT_STAR_POINTS = 10
 const SHOUT_STAR_INNER_RATIO = 0.5
 
+// Which of the star's 10 outer vertices (the even indices below) sits
+// nearest the tail's own direction from center — the one that gets
+// stretched into the tail. Inverts this array's own angle(i) formula
+// (angle = PI*i/SHOUT_STAR_POINTS - PI/2) to find the closest even i,
+// rounding to the nearest even integer and wrapping into [0, count).
+function nearestOuterStarVertexIndex(cx, cy, outerRx, outerRy, tx, ty) {
+  const count = SHOUT_STAR_POINTS * 2
+  const targetAngle = ellipseAngleToward(cx, cy, outerRx, outerRy, tx, ty)
+  const iRaw = ((targetAngle + Math.PI / 2) * SHOUT_STAR_POINTS) / Math.PI
+  return (((Math.round(iRaw / 2) * 2) % count) + count) % count
+}
+
 // The star's own vertex list, inscribed in the box — or, when there's a
-// tail, with its one bottommost point (see the angle math below: at
-// i = SHOUT_STAR_POINTS the angle is exactly straight down) stretched out
-// to the tail tip instead. That turns one of the star's own natural spikes
-// into the tail, rather than bolting on a separate triangle — the same
-// seamless-shape convention speechBubblePath follows, achieved here for
-// free since the star already comes to a point.
+// tail, with whichever outer point sits nearest the tail's own direction
+// (see nearestOuterStarVertexIndex above — not always the bottommost one;
+// a tail dragged up-and-left should stretch the spike already nearest
+// that direction, not the bottom one straight through the star's middle)
+// stretched out to the tail tip instead. That turns one of the star's own
+// natural spikes into the tail, rather than bolting on a separate
+// triangle — the same seamless-shape convention speechBubblePath follows,
+// achieved here for free since the star already comes to a point.
 export function shoutStarPoints(text) {
   const cx = text.x + text.w / 2
   const cy = text.y + text.h / 2
@@ -178,7 +224,10 @@ export function shoutStarPoints(text) {
     return [ cx + outerRx * ratio * Math.cos(angle), cy + outerRy * ratio * Math.sin(angle) ]
   })
 
-  if (text.tail) points[SHOUT_STAR_POINTS] = text.tail
+  if (text.tail) {
+    const [ tx, ty ] = text.tail
+    points[nearestOuterStarVertexIndex(cx, cy, outerRx, outerRy, tx, ty)] = text.tail
+  }
 
   return points
 }
