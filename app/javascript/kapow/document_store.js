@@ -143,8 +143,6 @@ export class DocumentStore {
       this._timer = null
     }
 
-    if (this._disabled) return this._pendingSave ?? Promise.resolve()
-
     this._pendingSave = Promise.resolve(this.persist(this.state)).catch((error) => {
       console.error("Kapow: failed to save page", error)
       throw error
@@ -158,20 +156,5 @@ export class DocumentStore {
   // call flush() first, then await this.
   whenSaved() {
     return this._pendingSave ?? Promise.resolve()
-  }
-
-  // Stops this store from persisting ever again — for a page whose own
-  // record was just deleted server-side (see
-  // editor_controller.js#markPageDeleting): saving to it from here on
-  // would only 404, whether from a call to flush() (e.g. via
-  // document_store_controller.js#disconnect, as this page's element
-  // leaves the DOM) or from the regular debounce timer above, which
-  // calls flush() on its own schedule independent of any of that.
-  disable() {
-    if (this._timer) {
-      clearTimeout(this._timer)
-      this._timer = null
-    }
-    this._disabled = true
   }
 }

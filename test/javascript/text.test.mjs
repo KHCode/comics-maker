@@ -142,23 +142,14 @@ test("FONT_CHOICES lists the doc's 4 lettering fonts", () => {
   assert.deepEqual(FONT_CHOICES, [ "comic", "loud", "print", "serif" ])
 })
 
-test("tailBaseCenter falls back to the bubble box's own bottom-center point when there's no tail", () => {
+test("tailBaseCenter is the bubble box's own bottom-center point", () => {
   assert.deepEqual(tailBaseCenter({ x: 100, y: 50, w: 200, h: 120 }), [ 200, 170 ])
-})
-
-// tailBaseCenter must be direction-aware, not hardcoded to the bottom:
-// this is the root of the bug where a tail dragged above the bubble drew
-// straight through its middle instead of leaving from the top.
-test("tailBaseCenter tracks the tail's own direction around the ellipse, not just straight down", () => {
-  const box = { x: 100, y: 50, w: 200, h: 120 } // cx=200, cy=110, rx=100, ry=60
-  assert.deepEqual(tailBaseCenter({ ...box, tail: [ 200, 600 ] }), [ 200, 170 ]) // straight down: box bottom
-  assert.deepEqual(tailBaseCenter({ ...box, tail: [ 200, -400 ] }), [ 200, 50 ]) // straight up: box top
 })
 
 test("tailShaftMidpoint sits halfway between the bubble's base and the tail tip", () => {
   const text = { x: 100, y: 50, w: 200, h: 120, tail: [ 400, 500 ] }
-  const [ bx, by ] = tailBaseCenter(text)
-  assert.deepEqual(tailShaftMidpoint(text), [ (bx + 400) / 2, (by + 500) / 2 ])
+  // base center is [200, 170]; tail tip is [400, 500]
+  assert.deepEqual(tailShaftMidpoint(text), [ 300, 335 ])
 })
 
 test("tailShaftMidpoint returns null when the element has no tail", () => {
@@ -175,28 +166,6 @@ test("speechBubblePath draws a single closed path (no separate re-entry) whether
 
   const withoutTail = { x: 100, y: 50, w: 200, h: 120, tail: null }
   assert.match(speechBubblePath(withoutTail), /^M .+ A .+ A .+ Z$/)
-})
-
-// Regression: a tail dragged above the bubble used to still leave from
-// the ellipse's bottom (the base angle was hardcoded to 90°/"straight
-// down"), so the notch's two flank points sat near the bottom while the
-// tail tip sat far above — two long lines crossing straight up through
-// the bubble's own interior and text instead of a clean notch. The base
-// must now track the tail's actual direction, so the flanks (and
-// everything between them, per TAIL_BASE_HALF_ANGLE_DEG) sit near
-// whichever side the tail tip is actually on.
-test("speechBubblePath leaves from the top of the ellipse when the tail points up, not the bottom", () => {
-  const box = { x: 100, y: 50, w: 200, h: 120, tail: [ 200, -400 ] } // cx=200, cy=110, rx=100, ry=60
-  const path = speechBubblePath(box)
-  const [ , mx, my, , , lx, ly ] = path.match(/^M ([\d.-]+) ([\d.-]+) L ([\d.-]+) ([\d.-]+) L ([\d.-]+) ([\d.-]+) A/).map(Number)
-  // both flank points sit close to the ellipse's own top (cy - ry = 50),
-  // not its bottom (cy + ry = 170)
-  assert.ok(Math.abs(my - 50) < 5, `expected left flank y near 50, got ${my}`)
-  assert.ok(Math.abs(ly - 50) < 5, `expected right flank y near 50, got ${ly}`)
-  // and both flanks sit close to cx horizontally (a tail pointing exactly
-  // straight up notches symmetrically left/right of center)
-  assert.ok(Math.abs(mx - 200) < 30, `expected left flank x near 200, got ${mx}`)
-  assert.ok(Math.abs(lx - 200) < 30, `expected right flank x near 200, got ${lx}`)
 })
 
 test("tailedShapeBounds is just the body's own box when there's no tail", () => {
@@ -227,24 +196,9 @@ test("shoutStarPoints generates a 20-vertex (10-point) star inscribed in the box
   assert.ok(Math.abs(by - cy) < 0.001)
 })
 
-test("shoutStarPoints stretches its bottommost point out to the tail tip when the tail points straight down", () => {
-  const points = shoutStarPoints({ x: 100, y: 50, w: 200, h: 120, tail: [ 200, 600 ] })
-  assert.deepEqual(points[10], [ 200, 600 ])
-})
-
-// The star has only 10 outer spikes (36° apart), so the tail should
-// stretch whichever one is actually nearest its own direction — not
-// always index 10 (bottom) regardless of where the tail really points.
-// This box's own bottommost spike is index 10, but a tail dragged down
-// *and to the right* is nearer spike 8; a tail dragged straight up is
-// nearest spike 0 (the diametric opposite of the bottom).
-test("shoutStarPoints stretches whichever outer spike is nearest the tail's own direction, not always the bottom", () => {
-  const box = { x: 100, y: 50, w: 200, h: 120 }
-  const downRight = shoutStarPoints({ ...box, tail: [ 500, 600 ] })
-  assert.deepEqual(downRight[8], [ 500, 600 ])
-
-  const up = shoutStarPoints({ ...box, tail: [ 200, -400 ] })
-  assert.deepEqual(up[0], [ 200, -400 ])
+test("shoutStarPoints stretches its bottommost point out to the tail tip instead, when there's a tail", () => {
+  const points = shoutStarPoints({ x: 100, y: 50, w: 200, h: 120, tail: [ 500, 600 ] })
+  assert.deepEqual(points[10], [ 500, 600 ])
 })
 
 test("shoutStarPath draws a single closed polygon through all 20 vertices", () => {

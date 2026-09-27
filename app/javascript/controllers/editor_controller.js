@@ -70,7 +70,6 @@ export default class extends Controller {
     "photoSubTab", "photoSubPanel",
     "photoBright", "photoContrast", "photoHue", "photoSat", "photoLook",
     "hideTextsButton", "textLayerButton",
-    "columnsButton",
     "undoButton", "redoButton",
     "exportButton", "exportPdfButton",
     "zoomInButton", "zoomOutButton", "zoomLevel"
@@ -84,8 +83,7 @@ export default class extends Controller {
     drawSize: { type: String, default: "m" },
     drawLayer: { type: String, default: "ink" },
     photoSubTab: { type: String, default: "fit" },
-    zoom: { type: Number, default: 1 },
-    columns: { type: Number, default: 1 }
+    zoom: { type: Number, default: 1 }
   }
 
   connect() {
@@ -107,8 +105,6 @@ export default class extends Controller {
     this.syncTextLayerButton()
     this.syncUndoRedoButtons()
     this.applyZoom()
-    this.updateColumnsUI()
-    this.applyColumns()
 
     // Trackpad/mouse ctrl+scroll and touchscreen pinch (see
     // handleWheelZoom/handleTouchStart/handleTouchMove) — both are on top
@@ -351,49 +347,6 @@ export default class extends Controller {
     this.pageTargets.forEach((el) => el.classList.toggle("page--active", el === pageEl))
   }
 
-  // Fires for every page element as it connects — both the ones already
-  // in the DOM at startup (redundant with, but harmless alongside,
-  // connect()'s own markActivePage(newestPageElement) call above) and,
-  // more importantly, one appended later without a full page reload (see
-  // PagesController#create's turbo_stream branch): "+Page" used to
-  // always land on a fresh reload, where connect() naturally re-picked
-  // the newest page as active; now that adding a page no longer reloads
-  // anything, this is what makes the newly added page become the active
-  // one (so the next "Add panel"/preset click lands on it) instead of
-  // silently leaving whichever page was active before untouched.
-  pageTargetConnected(pageEl) {
-    this.markActivePage(pageEl)
-  }
-
-  // Mirrors pageTargetConnected above, for a page removed without a full
-  // reload (see PagesController#destroy's turbo_stream branch). Without
-  // this, deleting whichever page happened to be active/last-mutated
-  // would leave activePageElement/lastMutatedPageElement pointing at a
-  // now-detached element — targetPageElement would keep "targeting" a
-  // page that's no longer in the document instead of falling back to a
-  // real one, and documentStoreControllerFor(pageEl) would return
-  // nothing for it (Stimulus tears down a disconnected element's own
-  // controllers), so the very next "Add panel"/undo/redo would silently
-  // do nothing.
-  pageTargetDisconnected(pageEl) {
-    if (this.activePageElement === pageEl) this.activePageElement = null
-    if (this.lastMutatedPageElement === pageEl) this.lastMutatedPageElement = null
-  }
-
-  // "Delete page" button's click handler, alongside its own (unchanged)
-  // form submission — see DocumentStore#disable in kapow/document_store.js.
-  // This page's own record is about to be destroyed by this same click's
-  // request, so its store has no reason to ever try saving again: not
-  // its regular debounce timer (which fires on its own schedule,
-  // independent of this element even still being in the DOM), and not
-  // document_store_controller.js#disconnect's flush() once
-  // PagesController#destroy's turbo_stream.remove takes this element out
-  // — either would just 404 otherwise.
-  markPageDeleting(event) {
-    const pageEl = event.currentTarget.closest(".page")
-    this.documentStoreControllerFor(pageEl)?.store.disable()
-  }
-
   addPanel(event) {
     const pageEl = this.targetPageElement
     if (!pageEl) return
@@ -571,28 +524,6 @@ export default class extends Controller {
     if (this.hasZoomLevelTarget) this.zoomLevelTarget.textContent = `${Math.round(this.zoomValue * 100)}%`
     if (this.hasZoomInButtonTarget) this.zoomInButtonTarget.disabled = this.zoomValue >= ZOOM_MAX
     if (this.hasZoomOutButtonTarget) this.zoomOutButtonTarget.disabled = this.zoomValue <= ZOOM_MIN
-  }
-
-  // Layout tray's "Columns" control — how many pages sit side by side per
-  // row (1/2/3), independent of canvas zoom. Session-only like zoom/"Hide
-  // text", not persisted; always starts back at 1 on the next visit.
-  // Applied the same way as zoom: a single CSS custom property on this
-  // element (see --pages-columns in editor.css) rather than any JS layout
-  // math, so .pages's own grid handles wrapping pages into rows.
-  selectColumns(event) {
-    this.columnsValue = Number(event.currentTarget.dataset.columns)
-    this.updateColumnsUI()
-    this.applyColumns()
-  }
-
-  updateColumnsUI() {
-    this.columnsButtonTargets.forEach((button) => {
-      button.classList.toggle("ink-size--active", Number(button.dataset.columns) === this.columnsValue)
-    })
-  }
-
-  applyColumns() {
-    this.element.style.setProperty("--pages-columns", this.columnsValue)
   }
 
   // Trackpad pinch gestures and literal ctrl+scroll-wheel both arrive as

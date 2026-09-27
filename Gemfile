@@ -64,8 +64,4 @@ group :test do
   # Use system testing [https://guides.rubyonrails.org/testing.html#system-testing]
   gem "capybara"
   gem "selenium-webdriver"
-
-  # Retries a system test on failure — ChromeDriver's native click
-  # occasionally drops input silently (see application_system_test_case.rb)
-  gem "minitest-retry"
 end
