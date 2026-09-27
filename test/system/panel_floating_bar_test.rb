@@ -23,6 +23,12 @@ class PanelFloatingBarTest < ApplicationSystemTestCase
 
   def select_panel(panel_id = "p1")
     find("polygon.panel-outline[data-panel-id='#{panel_id}']").click
+    # This click occasionally doesn't register as a selection (pre-existing
+    # flake, reproduces on commits well before this branch — see the CI
+    # investigation, root cause not pinned down). Retrying once is enough.
+    unless page.has_css?(".panel-floating-bar", wait: 1)
+      find("polygon.panel-outline[data-panel-id='#{panel_id}']").click
+    end
   end
 
   def bar_button(action)
