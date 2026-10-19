@@ -12,7 +12,6 @@ input[type="submit"],
   background: var(--color-surface-raised);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-offset) var(--shadow-offset) 0 var(--color-border);
   padding: 0.5rem 0.9rem;
   cursor: pointer;
 }
