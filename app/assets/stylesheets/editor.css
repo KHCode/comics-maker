@@ -637,8 +637,10 @@
 }
 
 .draw-layer-tabs {
+  /* No margin here: it's a flex item of the (wrapping, center-aligned)
+     tray, whose row gap already spaces it — a margin would make its row
+     taller than every other mode's and shift that row's buttons down. */
   display: flex;
-  margin-bottom: 0.5rem;
 }
 
 .draw-layer-tab {
