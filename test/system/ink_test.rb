@@ -104,7 +104,7 @@ class InkTest < ApplicationSystemTestCase
     switch_to_draw_mode
     focus_panel
 
-    within(draw_tray) { click_button "🖊 Marker" }
+    within(draw_tray) { click_button "Marker" }
     drag_element_by(panel_polygon, 60, 40)
 
     stroke = stored_panel["strokes"].first
@@ -168,7 +168,7 @@ class InkTest < ApplicationSystemTestCase
     # though it's plainly on-screen.
     assert_selector ".panel-ink[data-panel-id='p1'] polyline", count: 1, visible: :all
 
-    within(draw_tray) { click_button "⌫ Eraser" }
+    within(draw_tray) { click_button "Eraser" }
     drag_element_by(panel_polygon, 80, 0)
 
     assert_equal 0, stored_panel["strokes"].length

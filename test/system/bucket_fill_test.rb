@@ -49,7 +49,7 @@ class BucketFillTest < ApplicationSystemTestCase
   end
 
   def select_bucket_tool
-    click_button "🪣 Bucket"
+    click_button "Bucket"
   end
 
   def select_ink_color(hex)

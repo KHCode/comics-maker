@@ -616,6 +616,31 @@
   pointer-events: none;
 }
 
+/* Draw tool icons, from a 4-cell sprite (pen, marker, eraser, bucket).
+   Used as a mask filled with currentColor rather than a background image,
+   so the glyph follows the button's text color in dark mode and when
+   active. Drawn larger than the button's 1.25em line-height (the glyphs
+   only fill part of each cell), with negative vertical margins so the
+   icon's margin box — and so the button — stays the same height as the
+   rest of the tray. */
+.ink-tool-icon {
+  display: inline-block;
+  width: 2em;
+  height: 2em;
+  margin: -0.375em -0.25em;
+  vertical-align: top;
+  background-color: currentColor;
+  -webkit-mask: url("drawing-tools-sprite.png") no-repeat;
+  mask: url("drawing-tools-sprite.png") no-repeat;
+  -webkit-mask-size: 400% 100%;
+  mask-size: 400% 100%;
+}
+
+.ink-tool-icon--pen    { -webkit-mask-position: 0% 0;      mask-position: 0% 0; }
+.ink-tool-icon--marker { -webkit-mask-position: 33.333% 0; mask-position: 33.333% 0; }
+.ink-tool-icon--eraser { -webkit-mask-position: 66.667% 0; mask-position: 66.667% 0; }
+.ink-tool-icon--bucket { -webkit-mask-position: 100% 0;    mask-position: 100% 0; }
+
 .ink-tool--active,
 .ink-size--active {
   background: var(--color-active-element);

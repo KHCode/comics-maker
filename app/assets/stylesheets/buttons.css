@@ -8,7 +8,7 @@ input[type="submit"],
   font-family: inherit;
   font-weight: 700;
   /* Fixed, not `normal`: a `normal` line box grows to fit a fallback
-     font's taller metrics, so an emoji label (e.g. Draw's "🖊 Marker")
+     font's taller metrics, so an emoji label
      would make its button — and its whole tray row — taller than the
      rest. */
   line-height: 1.25;
