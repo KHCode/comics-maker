@@ -312,7 +312,7 @@
 }
 
 .panel-floating-bar .floating-bar-button--active rect {
-  fill: var(--color-accent);
+  fill: var(--color-active-element);
 }
 
 .panel-floating-bar .floating-bar-button text {
@@ -562,7 +562,7 @@
 }
 
 .text-floating-bar .floating-bar-button--active {
-  background: var(--color-accent);
+  background: var(--color-active-element);
   color: var(--color-ink);
 }
 
@@ -618,7 +618,7 @@
 
 .ink-tool--active,
 .ink-size--active {
-  background: var(--color-accent);
+  background: var(--color-active-element);
   color: var(--color-ink);
 }
 
@@ -650,7 +650,7 @@
 }
 
 .draw-layer-tab--active {
-  background: var(--color-accent);
+  background: var(--color-active-element);
   color: var(--color-ink);
 }
 
@@ -685,7 +685,7 @@
 }
 
 .mode-tab--active {
-  background: var(--color-accent);
+  background: var(--color-active-element);
   /* Explicit ink, not --color-text: the accent fill stays bright yellow in
      dark mode too, so the theme-swapped (near-white) text would be unreadable. */
   color: var(--color-ink);

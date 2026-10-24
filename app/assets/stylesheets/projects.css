@@ -49,7 +49,7 @@
 }
 
 .project-tab--active {
-  background: var(--color-accent);
+  background: var(--color-active-element);
   /* Explicit ink, not --color-text: the accent fill stays bright yellow in
      dark mode too, so the theme-swapped (near-white) text would be unreadable. */
   color: var(--color-ink);

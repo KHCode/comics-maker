@@ -7,6 +7,7 @@
   --color-desk: #e9e4d8;
   --color-sfx-red: #e0452d;
   --color-orange: #f2994a;
+  --color-active-element: #a5d8ff;
 
   /* Semantic roles, swapped for dark mode below. The comic page canvas
      itself is never themed — see .page-canvas — matching the doc: "the
